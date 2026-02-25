@@ -1,0 +1,576 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "AxionID API",
+        "description": "Documentação oficial do sistema de identidade AxionID",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "http://127.0.0.1:8000",
+            "description": "Servidor Local"
+        }
+    ],
+    "paths": {
+        "/api/v1/register": {
+            "post": {
+                "tags": [
+                    "Autenticação"
+                ],
+                "summary": "1. Registro Inicial (Etapa 1)",
+                "operationId": "03666f8b124ee27d07a3aa0e8e419f57",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "João Silva"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "example": "joao@email.com"
+                                    },
+                                    "cpf_cnpj": {
+                                        "type": "string",
+                                        "example": "12345678901"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "example": "senha123"
+                                    },
+                                    "password_confirmation": {
+                                        "type": "string",
+                                        "example": "senha123"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Usuário criado com sucesso"
+                    },
+                    "422": {
+                        "description": "Erro de validação"
+                    }
+                }
+            }
+        },
+        "/api/v1/login": {
+            "post": {
+                "tags": [
+                    "Autenticação"
+                ],
+                "summary": "2. Autenticar usuário",
+                "operationId": "88cd4b257048f26100832995c484d78b",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "username": {
+                                        "description": "CPF ou CNPJ",
+                                        "type": "string",
+                                        "example": "12345678901"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "example": "senha123"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Login realizado com sucesso"
+                    },
+                    "401": {
+                        "description": "Credenciais inválidas"
+                    },
+                    "403": {
+                        "description": "Conta suspensa"
+                    }
+                }
+            }
+        },
+        "/api/v1/complete-profile": {
+            "post": {
+                "tags": [
+                    "Perfil"
+                ],
+                "summary": "3. Completar Cadastro (Etapa 2 - Endereço)",
+                "operationId": "18765c94813254b5ae82ef223eaff7a8",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "zip_code": {
+                                        "type": "string",
+                                        "example": "01001000"
+                                    },
+                                    "street": {
+                                        "type": "string",
+                                        "example": "Rua Exemplo"
+                                    },
+                                    "number": {
+                                        "type": "string",
+                                        "example": "123"
+                                    },
+                                    "neighborhood": {
+                                        "type": "string",
+                                        "example": "Bairro Centro"
+                                    },
+                                    "city": {
+                                        "type": "string",
+                                        "example": "São Paulo"
+                                    },
+                                    "state": {
+                                        "type": "string",
+                                        "example": "SP"
+                                    },
+                                    "complement": {
+                                        "type": "string",
+                                        "example": "Apto 1"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Perfil completado com sucesso"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/users": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Listar usuários com filtros",
+                "operationId": "4f45b2ab1c76eafc01bbe68fbb001c4b",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "completed",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "enum": [
+                                0,
+                                1
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Lista de usuários"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/users/{id}/promote": {
+            "post": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Promover usuário a Admin",
+                "operationId": "221e2228659b9232adf635e795370e2d",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Promovido com sucesso"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/users/{id}/toggle-status": {
+            "patch": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Bloquear/Desbloquear usuário",
+                "operationId": "5616c84daa52fccccc52e7399905b9b8",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status alterado com sucesso"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/users/{id}/update-manual": {
+            "put": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Editar usuário manualmente (Admin)",
+                "operationId": "c7a177e37b767a1330353c840fa8eb32",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "name": {
+                                        "type": "string"
+                                    },
+                                    "email": {
+                                        "type": "string"
+                                    },
+                                    "cpf_cnpj": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Usuário atualizado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/audit-logs": {
+            "get": {
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Visualizar logs de auditoria",
+                "operationId": "015d022f2bc5735acf3ac73247a6e785",
+                "parameters": [
+                    {
+                        "name": "method",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "example": "POST"
+                        }
+                    },
+                    {
+                        "name": "date",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Logs retornados"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/logout": {
+            "post": {
+                "tags": [
+                    "Autenticação"
+                ],
+                "summary": "Logout",
+                "operationId": "aa1d40a69b3a93db8bfcef13f29afa74",
+                "responses": {
+                    "200": {
+                        "description": "Sessão encerrada"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/forgot-password": {
+            "post": {
+                "tags": [
+                    "Recuperação de Senha"
+                ],
+                "summary": "1. Solicitar código de recuperação",
+                "operationId": "727cb7858ffeb4e102be8ab66681e1b4",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "example": "josilva1233@gmail.com"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Código enviado"
+                    }
+                }
+            }
+        },
+        "/api/v1/verify-code": {
+            "post": {
+                "tags": [
+                    "Recuperação de Senha"
+                ],
+                "summary": "2. Validar código recebido",
+                "operationId": "fffb18746ad52ddb67dd0ef49a72b999",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "example": "josilva1233@gmail.com"
+                                    },
+                                    "token": {
+                                        "type": "string",
+                                        "example": "ABC123"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Código válido"
+                    }
+                }
+            }
+        },
+        "/api/v1/reset-password": {
+            "post": {
+                "tags": [
+                    "Recuperação de Senha"
+                ],
+                "summary": "3. Definir nova senha",
+                "operationId": "10071ce688d34466c60a6ba60a654cf4",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "email": {
+                                        "type": "string",
+                                        "example": "josilva1233@gmail.com"
+                                    },
+                                    "token": {
+                                        "type": "string",
+                                        "example": "ABC123"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "example": "nova_senha123"
+                                    },
+                                    "password_confirmation": {
+                                        "type": "string",
+                                        "example": "nova_senha123"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Senha alterada com sucesso"
+                    },
+                    "422": {
+                        "description": "Erro de validação"
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google": {
+            "get": {
+                "tags": [
+                    "Autenticação Social"
+                ],
+                "summary": "Redirecionar para login do Google",
+                "description": "Envia o usuário para a tela de autenticação oficial do Google.",
+                "operationId": "c3bbf3810ac27e0b3231bc36a82da1ad",
+                "responses": {
+                    "302": {
+                        "description": "Redirecionamento para o Google"
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google/callback": {
+            "get": {
+                "tags": [
+                    "Autenticação Social"
+                ],
+                "summary": "Callback da autenticação Google",
+                "description": "Endpoint que recebe os dados do Google e gera o token de acesso da AxionID.",
+                "operationId": "c43b2144e39b2ce965521b988418dabe",
+                "responses": {
+                    "200": {
+                        "description": "Login realizado com sucesso",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Login via Google realizado!"
+                                        },
+                                        "token": {
+                                            "type": "string",
+                                            "example": "39|vmmXWH..."
+                                        },
+                                        "user": {
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/": {
+            "get": {
+                "tags": [
+                    "Sistema"
+                ],
+                "summary": "Status da API",
+                "operationId": "dbf5a9bf30b7a151da01a66d1d925cd1",
+                "responses": {
+                    "200": {
+                        "description": "API Online"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "sanctum": {
+                "type": "http",
+                "description": "Insira o token gerado no login (ex: 1|abcde...) para autorizar as chamadas.",
+                "bearerFormat": "JWT",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Autenticação",
+            "description": "Autenticação"
+        },
+        {
+            "name": "Perfil",
+            "description": "Perfil"
+        },
+        {
+            "name": "Admin",
+            "description": "Admin"
+        },
+        {
+            "name": "Recuperação de Senha",
+            "description": "Recuperação de Senha"
+        },
+        {
+            "name": "Autenticação Social",
+            "description": "Autenticação Social"
+        },
+        {
+            "name": "Sistema",
+            "description": "Sistema"
+        }
+    ]
+}
