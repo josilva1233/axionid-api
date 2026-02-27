@@ -8,7 +8,7 @@ use Illuminate\Routing\Controller as BaseController;
 use OpenApi\Attributes as OA;
 
 #[OA\Info(title: "AxionID API", version: "1.0.0", description: "Documentação oficial do sistema de identidade AxionID")]
-#[OA\Server(url: "http://127.0.0.1:8000", description: "Servidor Local")]
+#[OA\Server(url: "http://163.176.168.224", description: "Servidor de Produção Oracle")]
 #[OA\SecurityScheme(
     securityScheme: 'sanctum',
     type: 'http',

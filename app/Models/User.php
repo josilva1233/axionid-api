@@ -20,7 +20,9 @@ class User extends Authenticatable
         'password',
         'cpf_cnpj',           
         'profile_completed',
-        'is_admin', // <-- ADICIONE ESTA LINHA para permitir o nível de acesso
+        'is_admin',
+        'google_id',
+        'govbr_id', // <-- ADICIONE ESTA LINHA para permitir o nível de acesso
     ];
 
     /**

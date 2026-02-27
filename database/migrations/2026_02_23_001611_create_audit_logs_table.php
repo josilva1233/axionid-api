@@ -10,19 +10,18 @@ return new class extends Migration
      * Run the migrations.
      */
     public function up(): void
-{
-    Schema::create('audit_logs', function (Blueprint $table) {
-        $table->id();
-        $table->foreignId('user_id')->nullable()->constrained()->onDelete('set null');
-        $table->string('method'); // GET, POST, DELETE...
-        $table->string('url');
-        $table->ipAddress('ip_address');
-        $table->text('user_agent')->nullable(); // Navegador ou sistema
-        $table->json('payload')->nullable(); // O que foi enviado (opcional)
-        $table->timestamp('created_at')->useCurrent();
-        $table->timestamps();
-    });
-}
+    {
+        Schema::create('audit_logs', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->nullable()->constrained()->onDelete('set null');
+            $table->string('method'); 
+            $table->string('url');
+            $table->ipAddress('ip_address');
+            $table->text('user_agent')->nullable();
+            $table->json('payload')->nullable();
+            $table->timestamps(); // Cria 'created_at' e 'updated_at' automaticamente
+        });
+    }
 
     /**
      * Reverse the migrations.
