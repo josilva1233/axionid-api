@@ -4,51 +4,66 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Laravel\Socialite\Facades\Socialite;
-use Illuminate\Http\RedirectResponse;
 
 class SocialAuthController extends Controller
 {
-    public function redirectToGoogle()
+    /**
+     * 1. O Front chama essa rota passando ?origin=https://seu-site.com
+     */
+    public function redirectToGoogle(Request $request)
     {
-        return Socialite::driver('google')->stateless()->redirect();
+        // Pega a URL de quem chamou. Se não vier nada, usa o padrão do .env
+        $origin = $request->query('origin', env('FRONTEND_URL'));
+
+        // O 'state' é enviado ao Google e ele nos devolve exatamente igual no callback
+        return Socialite::driver('google')
+            ->stateless()
+            ->with(['state' => 'origin=' . $origin])
+            ->redirect();
     }
 
-    public function handleGoogleCallback()
+    /**
+     * 2. O Google volta para cá trazendo o 'state' com a URL original
+     */
+    public function handleGoogleCallback(Request $request)
     {
         try {
+            // Recupera qual era a URL do Front-end (Vercel ou Localhost)
+            $state = $request->input('state');
+            parse_str($state, $result);
+            $frontendUrl = $result['origin'] ?? env('FRONTEND_URL');
+
             $googleUser = Socialite::driver('google')->stateless()->user();
             
-            // 1. Apenas BUSCA o usuário. NÃO cria se não encontrar.
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
-            // 2. Se o usuário não existe, mandamos para o REGISTRO com os dados na URL
+            // REGISTRO: Redireciona para a URL dinâmica detectada
             if (!$user) {
                 $name = urlencode($googleUser->name);
                 $email = urlencode($googleUser->email);
-                
-                // Redireciona para a página de registro do React (Register.jsx)
-                // Note que não passamos token aqui, pois o usuário ainda não foi criado.
-                return redirect("http://localhost:5173/register?name={$name}&email={$email}&from_google=true");
+                return redirect("{$frontendUrl}/register?name={$name}&email={$email}&from_google=true");
             }
 
-            // 3. Se o usuário existe mas está sem CPF (caso de erro anterior)
+            // SEM CPF: Redireciona para a URL dinâmica detectada
             if (empty($user->cpf_cnpj)) {
                 $token = $user->createToken('axion_token')->plainTextToken;
-                return redirect("http://localhost:5173/register?token={$token}&name=" . urlencode($user->name) . "&email=" . $user->email);
+                return redirect("{$frontendUrl}/register?token={$token}&name=" . urlencode($user->name) . "&email=" . $user->email);
             }
 
-            // 4. Se o usuário já existe e está COMPLETO, faz o login normal
+            // LOGIN SUCESSO: Redireciona para a URL dinâmica detectada
             $token = $user->createToken('axion_token')->plainTextToken;
             $isAdmin = $user->is_admin ? '1' : '0';
 
-            return redirect("http://localhost:5173/?token={$token}&needs_cpf=false&is_admin={$isAdmin}");
+            return redirect("{$frontendUrl}/?token={$token}&needs_cpf=false&is_admin={$isAdmin}");
 
         } catch (\Exception $e) {
-            return redirect("http://localhost:5173/?error=auth_failed");
+            $fallback = env('FRONTEND_URL');
+            return redirect("{$fallback}/?error=auth_failed");
         }
     }
 }
