@@ -20,38 +20,32 @@ class SocialAuthController extends Controller
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
             
-            // Busca ou cria o usuário
+            // 1. Apenas BUSCA o usuário. NÃO cria se não encontrar.
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
+            // 2. Se o usuário não existe, mandamos para o REGISTRO com os dados na URL
             if (!$user) {
-                $user = User::create([
-                    'name' => $googleUser->name,
-                    'email' => $googleUser->email,
-                    'google_id' => $googleUser->id,
-                    'password' => null,
-                    'profile_completed' => false,
-                    'is_active' => true,
-                    'is_admin' => false // Padrão para novos
-                ]);
-            } else {
-                $user->update(['google_id' => $googleUser->id]);
+                $name = urlencode($googleUser->name);
+                $email = urlencode($googleUser->email);
+                
+                // Redireciona para a página de registro do React (Register.jsx)
+                // Note que não passamos token aqui, pois o usuário ainda não foi criado.
+                return redirect("http://localhost:5173/register?name={$name}&email={$email}&from_google=true");
             }
 
-            // Gera o Token
-            $token = $user->createToken('axion_token')->plainTextToken;
+            // 3. Se o usuário existe mas está sem CPF (caso de erro anterior)
+            if (empty($user->cpf_cnpj)) {
+                $token = $user->createToken('axion_token')->plainTextToken;
+                return redirect("http://localhost:5173/register?token={$token}&name=" . urlencode($user->name) . "&email=" . $user->email);
+            }
 
-            // Prepara os parâmetros para a URL
-            $needsCpf = empty($user->cpf_cnpj) ? 'true' : 'false';
-            
-            // CONVERSÃO DO STATUS ADMIN PARA A URL
+            // 4. Se o usuário já existe e está COMPLETO, faz o login normal
+            $token = $user->createToken('axion_token')->plainTextToken;
             $isAdmin = $user->is_admin ? '1' : '0';
 
-            // URL de redirecionamento com is_admin incluído
-            $redirectUrl = "http://localhost:5173/?token={$token}&needs_cpf={$needsCpf}&is_admin={$isAdmin}";
-
-            return redirect($redirectUrl);
+            return redirect("http://localhost:5173/?token={$token}&needs_cpf=false&is_admin={$isAdmin}");
 
         } catch (\Exception $e) {
             return redirect("http://localhost:5173/?error=auth_failed");
