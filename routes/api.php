@@ -49,6 +49,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
     Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
     
+    // ROTA ADICIONADA: Recupera dados do cache via chave temporária 't'
+    Route::get('/auth/temp-data/{key}', [SocialAuthController::class, 'getTempData']);
+    
     // Rotas de Recuperação de Senha
     Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/verify-code', [PasswordResetController::class, 'verifyCode']);

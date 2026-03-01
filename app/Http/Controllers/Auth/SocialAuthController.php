@@ -6,12 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache; // Adicionado para segurança
+use Illuminate\Support\Facades\Cache; 
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 
 class SocialAuthController extends Controller
 {
+    /**
+     * 1. Redireciona para o Google
+     */
     public function redirectToGoogle(Request $request)
     {
         $origin = $request->query('origin', env('FRONTEND_URL'));
@@ -22,6 +25,9 @@ class SocialAuthController extends Controller
             ->redirect();
     }
 
+    /**
+     * 2. Callback do Google
+     */
     public function handleGoogleCallback(Request $request)
     {
         try {
@@ -38,19 +44,19 @@ class SocialAuthController extends Controller
 
             // CENÁRIO 1: NOVO USUÁRIO (REGISTRO)
             if (!$user) {
-                // Criamos uma chave temporária para não expor o google_id na URL
                 $tempKey = Str::random(40);
                 
+                // Salva os dados sensíveis no cache por 10 minutos
                 Cache::put('temp_google_' . $tempKey, [
                     'google_id' => $googleUser->id,
                     'email' => $googleUser->email,
                     'name' => $googleUser->name
-                ], 600); // Expira em 10 minutos
+                ], 600); 
 
                 $name = urlencode($googleUser->name);
                 $email = urlencode($googleUser->email);
                 
-                // Enviamos apenas a 't' (tempKey) para o Front-end
+                // Redireciona com a chave 't'
                 return redirect("{$frontendUrl}/register?t={$tempKey}&name={$name}&email={$email}&from_google=true");
             }
 
@@ -59,7 +65,7 @@ class SocialAuthController extends Controller
                 $user->update(['google_id' => $googleUser->id]);
             }
 
-            // CENÁRIO 2: USUÁRIO EXISTE MAS NÃO TEM CPF (CADASTRO INCOMPLETO)
+            // CENÁRIO 2: USUÁRIO EXISTE MAS NÃO TEM CPF
             if (empty($user->cpf_cnpj)) {
                 $token = $user->createToken('axion_token')->plainTextToken;
                 return redirect("{$frontendUrl}/register?token={$token}&step=2&name=" . urlencode($user->name));
@@ -73,8 +79,22 @@ class SocialAuthController extends Controller
 
         } catch (\Exception $e) {
             $fallback = env('FRONTEND_URL');
-            // Logar o erro ajuda a debugar no servidor: \Log::error($e->getMessage());
             return redirect("{$fallback}/?error=auth_failed");
         }
+    }
+
+    /**
+     * 3. NOVA ROTA: Recupera os dados do Google para o formulário React
+     * Chamada pelo Front-end via: api.get('/api/v1/auth/temp-data/' + tempKey)
+     */
+    public function getTempData($key)
+    {
+        $data = Cache::get('temp_google_' . $key);
+
+        if (!$data) {
+            return response()->json(['message' => 'Dados expirados ou inválidos'], 404);
+        }
+
+        return response()->json($data);
     }
 }
