@@ -11,6 +11,9 @@ use Laravel\Socialite\Facades\Socialite;
 
 class SocialAuthController extends Controller
 {
+    /**
+     * Redireciona para o Google
+     */
     public function redirectToGoogle(Request $request)
     {
         $origin = $request->query('origin', env('FRONTEND_URL'));
@@ -20,16 +23,21 @@ class SocialAuthController extends Controller
             ->redirect();
     }
 
+    /**
+     * Callback do Google com Lógica de Vínculo e Redirecionamento Inteligente
+     */
     public function handleGoogleCallback(Request $request)
     {
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
             
+            // 1. Tenta encontrar por google_id OU por email (Vínculo de Contas)
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
             if (!$user) {
+                // 2. Se não existe de jeito nenhum, cria um novo
                 $user = User::create([
                     'name'      => $googleUser->name,
                     'email'     => $googleUser->email,
@@ -38,16 +46,24 @@ class SocialAuthController extends Controller
                     'from_google' => true,
                 ]);
             } else {
-                $user->update(['google_id' => $googleUser->id]);
+                // 3. VÍNCULO AUTOMÁTICO: 
+                // Se achou pelo email mas não tinha google_id, atualiza agora.
+                $user->update([
+                    'google_id' => $googleUser->id,
+                    'from_google' => true 
+                ]);
             }
 
+            // 4. Gera o token de acesso (Sanctum)
             $token = $user->createToken('axion_token')->plainTextToken;
 
+            // Recupera a URL de origem do state
             $state = $request->input('state');
             parse_str($state, $result);
             $frontendUrl = $result['origin'] ?? env('FRONTEND_URL');
 
-            // Se não tem CPF, manda para o registro passo 2 com os dados
+            // 5. FLUXO DE REDIRECIONAMENTO INTELIGENTE
+            // Caso A: Usuário manual antigo ou novo SEM CPF -> Manda completar perfil
             if (empty($user->cpf_cnpj)) {
                 $params = http_build_query([
                     'token' => $token,
@@ -59,6 +75,7 @@ class SocialAuthController extends Controller
                 return redirect("{$frontendUrl}/register?{$params}");
             }
 
+            // Caso B: Usuário já tem CPF (já era cadastrado e apenas vinculou o Google) -> Loga direto
             return redirect("{$frontendUrl}/dashboard?token={$token}");
 
         } catch (\Exception $e) {
@@ -67,33 +84,34 @@ class SocialAuthController extends Controller
     }
 
     /**
-     * Salva o CPF e a Senha do usuário vindo do Google
+     * Completa o perfil gravando apenas CPF/CNPJ e Senha.
+     * O usuário é identificado automaticamente pelo Token (Sanctum).
      */
-/**
- * Completa o perfil gravando apenas CPF/CNPJ e Senha.
- * O usuário é identificado automaticamente pelo Token (Sanctum).
- */
-public function completeProfile(Request $request)
-{
-    // 1. Pega o usuário autenticado pelo token
-    $user = $request->user();
+    public function completeProfile(Request $request)
+    {
+        // 1. Pega o usuário autenticado pelo token enviado no Header Authorization
+        $user = $request->user();
 
-    // 2. Valida os dados (CPF obrigatório e Senha com confirmação)
-    $request->validate([
-        'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
-        'password' => 'required|min:6|confirmed',
-    ]);
+        if (!$user) {
+            return response()->json(['message' => 'Usuário não autenticado.'], 401);
+        }
 
-    // 3. Faz o update apenas das colunas necessárias
-    $user->update([
-        'cpf_cnpj' => $request->cpf_cnpj,
-        'password'  => Hash::make($request->password),
-        'profile_completed' => true, // Marca como completo para o próximo login ir direto pro Dashboard
-    ]);
+        // 2. Valida os dados (O CPF deve ser único, ignorando o próprio ID do usuário)
+        $request->validate([
+            'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
+            'password' => 'required|min:6|confirmed',
+        ]);
 
-    return response()->json([
-        'message' => 'Cadastro finalizado com sucesso!',
-        'user' => $user
-    ]);
-}
+        // 3. Faz o update apenas das colunas necessárias para finalizar o onboarding
+        $user->update([
+            'cpf_cnpj' => $request->cpf_cnpj,
+            'password'  => Hash::make($request->password),
+            'profile_completed' => true, 
+        ]);
+
+        return response()->json([
+            'message' => 'Cadastro finalizado com sucesso!',
+            'user' => $user
+        ]);
+    }
 }
