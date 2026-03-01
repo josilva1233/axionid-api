@@ -37,11 +37,13 @@ class AxionAuthController extends Controller
     )]
     public function register(Request $request)
     {
+        // CORREÇÃO: Adicionado 'google_id' na validação para o Laravel aceitar o campo
         $validator = Validator::make($request->all(), [
-            'name'     => 'required|string|max:255',
-            'email'    => 'required|string|email|max:255|unique:users',
-            'cpf_cnpj' => 'required|string|unique:users',
-            'password' => 'required|string|min:8|confirmed',
+            'name'      => 'required|string|max:255',
+            'email'     => 'required|string|email|max:255|unique:users',
+            'cpf_cnpj'  => 'required|string|unique:users',
+            'password'  => 'required|string|min:8|confirmed',
+            'google_id' => 'nullable|string', 
         ]);
 
         if ($validator->fails()) {
@@ -50,14 +52,15 @@ class AxionAuthController extends Controller
 
         $document = preg_replace('/[^0-9]/', '', $request->cpf_cnpj);
 
+        // CORREÇÃO: Atribuição direta do google_id vindo da Request
         $user = User::create([
-            'name'      => $request->name,
-            'email'     => $request->email,
-            'cpf_cnpj'  => $document,
-            'password'  => Hash::make($request->password),
+            'name'              => $request->name,
+            'email'             => $request->email,
+            'cpf_cnpj'          => $document,
+            'password'          => Hash::make($request->password),
             'profile_completed' => false,
-            'google_id' => $request->google_id, // ESTA LINHA É O QUE FALTA!
-            'is_active' => true,
+            'google_id'         => $request->google_id, 
+            'is_active'         => true,
         ]);
 
         $token = $user->createToken('axion_token')->plainTextToken;
@@ -102,7 +105,6 @@ class AxionAuthController extends Controller
             return response()->json(['message' => 'Credenciais inválidas.'], 401);
         }
 
-        // Trava de usuário bloqueado
         if (!$user->is_active) {
             return response()->json(['message' => 'Esta conta foi suspensa por um administrador.'], 403);
         }
@@ -165,19 +167,6 @@ class AxionAuthController extends Controller
 
     // --- MÉTODOS DE ADMINISTRAÇÃO ---
 
-    #[OA\Get(
-        path: '/api/v1/users',
-        summary: 'Listar usuários com filtros',
-        tags: ['Admin'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'name', in: 'query', schema: new OA\Schema(type: 'string')),
-            new OA\Parameter(name: 'completed', in: 'query', schema: new OA\Schema(type: 'integer', enum: [0, 1]))
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'Lista de usuários')
-        ]
-    )]
     public function index(Request $request)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -189,14 +178,6 @@ class AxionAuthController extends Controller
         return response()->json($query->orderBy('created_at', 'desc')->paginate(10));
     }
 
-    #[OA\Post(
-        path: '/api/v1/users/{id}/promote',
-        summary: 'Promover usuário a Admin',
-        tags: ['Admin'],
-        security: [['sanctum' => []]],
-        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
-        responses: [new OA\Response(response: 200, description: 'Promovido com sucesso')]
-    )]
     public function promoteToAdmin($id)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -207,14 +188,6 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Usuário agora é Admin.']);
     }
 
-    #[OA\Patch(
-        path: '/api/v1/users/{id}/toggle-status',
-        summary: 'Bloquear/Desbloquear usuário',
-        tags: ['Admin'],
-        security: [['sanctum' => []]],
-        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
-        responses: [new OA\Response(response: 200, description: 'Status alterado com sucesso')]
-    )]
     public function toggleUserStatus($id)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -230,23 +203,6 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Status atualizado.', 'is_active' => $user->is_active]);
     }
 
-    #[OA\Put(
-        path: '/api/v1/users/{id}/update-manual',
-        summary: 'Editar usuário manualmente (Admin)',
-        tags: ['Admin'],
-        security: [['sanctum' => []]],
-        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
-        requestBody: new OA\RequestBody(
-            content: new OA\JsonContent(
-                properties: [
-                    new OA\Property(property: 'name', type: 'string'),
-                    new OA\Property(property: 'email', type: 'string'),
-                    new OA\Property(property: 'cpf_cnpj', type: 'string')
-                ]
-            )
-        ),
-        responses: [new OA\Response(response: 200, description: 'Usuário atualizado')]
-    )]
     public function adminUpdateUser(Request $request, $id)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -257,17 +213,6 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Usuário atualizado com sucesso.', 'user' => $user]);
     }
 
-    #[OA\Get(
-        path: '/api/v1/audit-logs',
-        summary: 'Visualizar logs de auditoria',
-        tags: ['Admin'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'method', in: 'query', schema: new OA\Schema(type: 'string', example: 'POST')),
-            new OA\Parameter(name: 'date', in: 'query', schema: new OA\Schema(type: 'string', format: 'date'))
-        ],
-        responses: [new OA\Response(response: 200, description: 'Logs retornados')]
-    )]
     public function auditLogs(Request $request)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -279,13 +224,6 @@ class AxionAuthController extends Controller
         return response()->json($query->orderBy('created_at', 'desc')->paginate(20));
     }
 
-    #[OA\Post(
-        path: '/api/v1/logout',
-        summary: 'Logout',
-        tags: ['Autenticação'],
-        security: [['sanctum' => []]],
-        responses: [new OA\Response(response: 200, description: 'Sessão encerrada')]
-    )]
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
