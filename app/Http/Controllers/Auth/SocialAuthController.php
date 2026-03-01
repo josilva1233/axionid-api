@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache; 
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 
@@ -26,7 +26,7 @@ class SocialAuthController extends Controller
     }
 
     /**
-     * 2. Callback do Google
+     * 2. Callback do Google - Cadastro Automático e Login
      */
     public function handleGoogleCallback(Request $request)
     {
@@ -42,36 +42,33 @@ class SocialAuthController extends Controller
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
-            // CENÁRIO 1: NOVO USUÁRIO (REGISTRO SEGURO)
+            // CENÁRIO 1: USUÁRIO NÃO EXISTE -> CADASTRA AGORA
             if (!$user) {
-                $tempKey = Str::random(40);
-                
-                // SALVANDO NO CACHE (O google_id, name e email ficam seguros no servidor)
-                Cache::put('temp_google_' . $tempKey, [
+                $user = User::create([
+                    'name' => $googleUser->name,
+                    'email' => $googleUser->email,
                     'google_id' => $googleUser->id,
-                    'name'      => $googleUser->name,
-                    'email'     => $googleUser->email,
-                ], 600); // 10 minutos de vida
-
-                // REDIRECIONAMENTO SEGURO (Sem IDs, Nomes ou E-mails expostos na URL)
-                return redirect("{$frontendUrl}/register?t={$tempKey}&from_google=true");
+                    'password' => Hash::make(Str::random(24)), // Senha aleatória segura
+                    'from_google' => true,
+                ]);
             }
 
-            // Atualiza o google_id se o usuário existia apenas por email
+            // Garante que o google_id esteja vinculado se ele já existia por email
             if (empty($user->google_id)) {
                 $user->update(['google_id' => $googleUser->id]);
             }
 
-            // CENÁRIO 2: USUÁRIO EXISTE MAS NÃO TEM CPF
+            // Gera o Token de autenticação (Sanctum)
+            $token = $user->createToken('axion_token')->plainTextToken;
+
+            // CENÁRIO 2: FALTA CPF/CNPJ
+            // Manda para o registro no Step 2, mas já autenticado com o Token
             if (empty($user->cpf_cnpj)) {
-                $token = $user->createToken('axion_token')->plainTextToken;
-                return redirect("{$frontendUrl}/register?token={$token}&step=2&name=" . urlencode($user->name));
+                return redirect("{$frontendUrl}/register?token={$token}&step=2&name=" . urlencode($user->name) . "&from_google=true");
             }
 
-            // CENÁRIO 3: LOGIN SUCESSO
-            $token = $user->createToken('axion_token')->plainTextToken;
+            // CENÁRIO 3: LOGIN SUCESSO (Tudo completo)
             $isAdmin = $user->is_admin ? '1' : '0';
-
             return redirect("{$frontendUrl}/dashboard?token={$token}&is_admin={$isAdmin}&email={$user->email}");
 
         } catch (\Exception $e) {
@@ -81,17 +78,12 @@ class SocialAuthController extends Controller
     }
 
     /**
-     * 3. Recupera os dados do Cache para o formulário React
+     * Nota: getTempData não é mais estritamente necessário para o fluxo Google, 
+     * mas pode ser mantido se houver outros fluxos de cache.
      */
     public function getTempData($key)
     {
-        // Busca usando o mesmo prefixo definido no callback
-        $data = Cache::get('temp_google_' . $key);
-
-        if (!$data) {
-            return response()->json(['message' => 'Dados expirados ou inválidos'], 404);
-        }
-
-        return response()->json($data);
+        $data = \Illuminate\Support\Facades\Cache::get('temp_google_' . $key);
+        return $data ? response()->json($data) : response()->json(['message' => 'Expirado'], 404);
     }
 }
