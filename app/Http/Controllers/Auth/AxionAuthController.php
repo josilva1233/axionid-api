@@ -24,6 +24,7 @@ class AxionAuthController extends Controller
                     new OA\Property(property: 'name', type: 'string', example: 'João Silva'),
                     new OA\Property(property: 'email', type: 'string', example: 'joao@email.com'),
                     new OA\Property(property: 'cpf_cnpj', type: 'string', example: '12345678901'),
+                    new OA\Property(property: 'google_id', type: 'string', example: '123456789kjooojjd01'),
                     new OA\Property(property: 'password', type: 'string', example: 'senha123'),
                     new OA\Property(property: 'password_confirmation', type: 'string', example: 'senha123')
                 ]
