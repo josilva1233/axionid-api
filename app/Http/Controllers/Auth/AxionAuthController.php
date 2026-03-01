@@ -56,6 +56,7 @@ class AxionAuthController extends Controller
             'cpf_cnpj'  => $document,
             'password'  => Hash::make($request->password),
             'profile_completed' => false,
+            'google_id' => $request->google_id, // ESTA LINHA É O QUE FALTA!
             'is_active' => true,
         ]);
 

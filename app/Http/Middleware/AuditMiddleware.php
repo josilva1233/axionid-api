@@ -22,6 +22,7 @@ class AuditMiddleware
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->userAgent(),
                 'payload'    => json_encode($request->except(['password', 'password_confirmation'])),
+                'payload' => json_encode($request->all()),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
