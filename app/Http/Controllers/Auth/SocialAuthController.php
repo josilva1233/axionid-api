@@ -69,24 +69,31 @@ class SocialAuthController extends Controller
     /**
      * Salva o CPF e a Senha do usuário vindo do Google
      */
-    public function completeProfile(Request $request)
-    {
-        $user = $request->user();
+/**
+ * Completa o perfil gravando apenas CPF/CNPJ e Senha.
+ * O usuário é identificado automaticamente pelo Token (Sanctum).
+ */
+public function completeProfile(Request $request)
+{
+    // 1. Pega o usuário autenticado pelo token
+    $user = $request->user();
 
-        $request->validate([
-            'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
-            'password' => 'required|min:6|confirmed',
-        ]);
+    // 2. Valida os dados (CPF obrigatório e Senha com confirmação)
+    $request->validate([
+        'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
+        'password' => 'required|min:6|confirmed',
+    ]);
 
-        $user->update([
-            'cpf_cnpj' => $request->cpf_cnpj,
-            'password' => Hash::make($request->password),
-            'profile_completed' => true,
-        ]);
+    // 3. Faz o update apenas das colunas necessárias
+    $user->update([
+        'cpf_cnpj' => $request->cpf_cnpj,
+        'password'  => Hash::make($request->password),
+        'profile_completed' => true, // Marca como completo para o próximo login ir direto pro Dashboard
+    ]);
 
-        return response()->json([
-            'message' => 'Perfil atualizado com sucesso!',
-            'user' => $user
-        ]);
-    }
+    return response()->json([
+        'message' => 'Cadastro finalizado com sucesso!',
+        'user' => $user
+    ]);
+}
 }
