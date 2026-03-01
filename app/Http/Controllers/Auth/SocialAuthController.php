@@ -42,22 +42,19 @@ class SocialAuthController extends Controller
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
-            // CENÁRIO 1: NOVO USUÁRIO (REGISTRO)
+            // CENÁRIO 1: NOVO USUÁRIO (REGISTRO SEGURO)
             if (!$user) {
                 $tempKey = Str::random(40);
                 
-                // Salva os dados sensíveis no cache por 10 minutos
+                // SALVANDO NO CACHE (O google_id, name e email ficam seguros no servidor)
                 Cache::put('temp_google_' . $tempKey, [
                     'google_id' => $googleUser->id,
-                    'email' => $googleUser->email,
-                    'name' => $googleUser->name
-                ], 600); 
+                    'name'      => $googleUser->name,
+                    'email'     => $googleUser->email,
+                ], 600); // 10 minutos de vida
 
-                $name = urlencode($googleUser->name);
-                $email = urlencode($googleUser->email);
-                
-                // Redireciona com a chave 't'
-                return redirect("{$frontendUrl}/register?t={$tempKey}&name={$name}&email={$email}&from_google=true");
+                // REDIRECIONAMENTO SEGURO (Sem IDs, Nomes ou E-mails expostos na URL)
+                return redirect("{$frontendUrl}/register?t={$tempKey}&from_google=true");
             }
 
             // Atualiza o google_id se o usuário existia apenas por email
@@ -84,11 +81,11 @@ class SocialAuthController extends Controller
     }
 
     /**
-     * 3. NOVA ROTA: Recupera os dados do Google para o formulário React
-     * Chamada pelo Front-end via: api.get('/api/v1/auth/temp-data/' + tempKey)
+     * 3. Recupera os dados do Cache para o formulário React
      */
     public function getTempData($key)
     {
+        // Busca usando o mesmo prefixo definido no callback
         $data = Cache::get('temp_google_' . $key);
 
         if (!$data) {
