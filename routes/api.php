@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 |--------------------------------------------------------------------------
 */
 
-// Health Check com Inteligência de Ambiente
+// Health Check
 Route::get('/health', function() {
     try {
         DB::connection()->getPdo();
@@ -21,26 +21,16 @@ Route::get('/health', function() {
     } catch (\Exception $e) {
         $dbStatus = 'Disconnected';
     }
-
-    $response = [
+    return response()->json([
         'status'   => 'UP',
         'database' => $dbStatus,
-    ];
-
-    if (app()->environment() !== 'production') {
-        $response['service'] = 'AxionID API';
-        $response['environment'] = app()->environment();
-        $response['php_version'] = PHP_VERSION;
-    }
-
-    return response()->json($response, $dbStatus === 'Connected' ? 200 : 503);
+    ], $dbStatus === 'Connected' ? 200 : 503);
 });
 
-// Todas as rotas abaixo têm o prefixo /api/v1
 Route::prefix('v1')->group(function () {
     
     // ---------------------------------------------------------
-    // ROTAS PÚBLICAS (Abertas)
+    // ROTAS PÚBLICAS
     // ---------------------------------------------------------
     Route::post('/register', [AxionAuthController::class, 'register']);
     Route::post('/login', [AxionAuthController::class, 'login']);
@@ -49,22 +39,21 @@ Route::prefix('v1')->group(function () {
     Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
     Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
     
-    // ROTA ADICIONADA: Recupera dados do cache via chave temporária 't'
-    Route::get('/auth/temp-data/{key}', [SocialAuthController::class, 'getTempData']);
-    
     // Rotas de Recuperação de Senha
     Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/verify-code', [PasswordResetController::class, 'verifyCode']);
     Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']);
 
     // ---------------------------------------------------------
-    // ROTAS PROTEGIDAS (Requer Token Válido via Sanctum)
+    // ROTAS PROTEGIDAS (Sanctum)
     // ---------------------------------------------------------
     Route::middleware('auth:sanctum')->group(function () {
         
-        // Perfil e Logout
         Route::post('/logout', [AxionAuthController::class, 'logout']);
-        Route::post('/complete-profile', [AxionAuthController::class, 'completeProfile']);
+        
+        // CORREÇÃO: Função de salvar CPF no SocialAuthController
+        Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']);
+        
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
         
         Route::get('/me', function (Request $request) {
@@ -72,7 +61,7 @@ Route::prefix('v1')->group(function () {
         });
 
         // ---------------------------------------------------------
-        // PAINEL ADMINISTRATIVO (Apenas usuários com is_admin = 1)
+        // PAINEL ADMINISTRATIVO (is_admin = 1)
         // ---------------------------------------------------------
         Route::middleware('admin')->group(function () {
             // Listagem e Auditoria
@@ -83,13 +72,12 @@ Route::prefix('v1')->group(function () {
             Route::patch('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
             Route::patch('/users/{id}/demote', [AxionAuthController::class, 'demoteFromAdmin']);
             
-            // Gestão de Status e Edição (Novas Rotas)
+            // Gestão de Status e Edição
             Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
             Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
             
             // Exclusão
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
         });
-        
     });
 });

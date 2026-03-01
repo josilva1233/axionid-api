@@ -47,11 +47,19 @@ class SocialAuthController extends Controller
             parse_str($state, $result);
             $frontendUrl = $result['origin'] ?? env('FRONTEND_URL');
 
-            $target = empty($user->cpf_cnpj) 
-                ? "/register?token={$token}&step=2&from_google=true&name=" . urlencode($user->name) . "&email=" . urlencode($user->email)
-                : "/dashboard?token={$token}";
+            // Se não tem CPF, manda para o registro passo 2 com os dados
+            if (empty($user->cpf_cnpj)) {
+                $params = http_build_query([
+                    'token' => $token,
+                    'step' => 2,
+                    'from_google' => 'true',
+                    'name' => $user->name,
+                    'email' => $user->email
+                ]);
+                return redirect("{$frontendUrl}/register?{$params}");
+            }
 
-            return redirect($frontendUrl . $target);
+            return redirect("{$frontendUrl}/dashboard?token={$token}");
 
         } catch (\Exception $e) {
             return redirect(env('FRONTEND_URL') . "/?error=auth_failed");
@@ -59,16 +67,11 @@ class SocialAuthController extends Controller
     }
 
     /**
-     * ESTA FUNÇÃO DEVE FICAR AQUI DENTRO (Antes da última chave)
+     * Salva o CPF e a Senha do usuário vindo do Google
      */
     public function completeProfile(Request $request)
     {
-        // O Sanctum identifica o usuário pelo Token enviado no Header
         $user = $request->user();
-
-        if (!$user) {
-            return response()->json(['message' => 'Usuário não autenticado'], 401);
-        }
 
         $request->validate([
             'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
@@ -78,7 +81,7 @@ class SocialAuthController extends Controller
         $user->update([
             'cpf_cnpj' => $request->cpf_cnpj,
             'password' => Hash::make($request->password),
-            'profile_completed' => true, 
+            'profile_completed' => true,
         ]);
 
         return response()->json([
@@ -86,4 +89,4 @@ class SocialAuthController extends Controller
             'user' => $user
         ]);
     }
-} // <--- Esta chave fecha a Classe
+}
