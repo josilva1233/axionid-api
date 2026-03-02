@@ -37,7 +37,7 @@ class SocialAuthController extends Controller
                         ->first();
 
             if (!$user) {
-                // 2. Se não existe de jeito nenhum, cria um novo (Já com google_id)
+                // CENÁRIO 2: Se não existe cadastro manual, cria um novo (faltando apenas CPF)
                 $user = User::create([
                     'name'        => $googleUser->name,
                     'email'       => $googleUser->email,
@@ -46,8 +46,8 @@ class SocialAuthController extends Controller
                     'from_google' => true,
                 ]);
             } else {
-                // 3. VÍNCULO AUTOMÁTICO: 
-                // Se achou pelo email mas não tinha google_id, atualiza agora para permitir logar
+                // CENÁRIO 1: Se achou pelo email (cadastro manual anterior) mas não tinha google_id
+                // Grava o google_id agora para vincular as contas
                 if (empty($user->google_id)) {
                     $user->update([
                         'google_id' => $googleUser->id,
@@ -66,13 +66,13 @@ class SocialAuthController extends Controller
 
             // 5. FLUXO DE REDIRECIONAMENTO INTELIGENTE
             
-            // Caso B: Usuário já tem CPF (Independente se o google_id acabou de ser gravado ou já existia)
+            // CENÁRIO 1 e 3: Usuário já tem CPF (ou já tinha manual ou já completou o registro)
             if (!empty($user->cpf_cnpj)) {
                 $isAdmin = $user->is_admin ? '1' : '0';
-                return redirect("{$frontendUrl}/dashboard?token={$token}&is_admin={$isAdmin}");
+                return redirect("{$frontendUrl}/dashboard?token={$token}&is_admin={$isAdmin}&name=" . urlencode($user->name) . "&email=" . urlencode($user->email));
             }
 
-            // Caso A: Usuário NÃO tem CPF (Novo ou incompleto) -> Manda registrar/completar
+            // CENÁRIO 2: Usuário NÃO tem CPF (Novo) -> Manda registrar/completar
             $params = http_build_query([
                 'token' => $token,
                 'needs_cpf' => 'true',
