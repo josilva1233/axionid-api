@@ -51,7 +51,8 @@ Route::prefix('v1')->group(function () {
         
         Route::post('/logout', [AxionAuthController::class, 'logout']);
         
-        // Finalização de perfil para quem vem do Google (Onde gravamos o CPF)
+        // CORREÇÃO: Removido o "/v1/" daqui, pois o prefixo já existe no grupo pai
+        // Esta é a rota que o Front-end deve chamar para gravar o CPF
         Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']);
         
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
