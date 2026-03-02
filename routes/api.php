@@ -51,7 +51,7 @@ Route::prefix('v1')->group(function () {
         
         Route::post('/logout', [AxionAuthController::class, 'logout']);
         
-        // CORREÇÃO: Função de salvar CPF no SocialAuthController
+        // Finalização de perfil para quem vem do Google (Onde gravamos o CPF)
         Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']);
         
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
@@ -64,19 +64,12 @@ Route::prefix('v1')->group(function () {
         // PAINEL ADMINISTRATIVO (is_admin = 1)
         // ---------------------------------------------------------
         Route::middleware('admin')->group(function () {
-            // Listagem e Auditoria
             Route::get('/users', [AxionAuthController::class, 'index']);
             Route::get('/audit-logs', [AxionAuthController::class, 'auditLogs']);
-            
-            // Gestão de Privilégios
             Route::patch('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
             Route::patch('/users/{id}/demote', [AxionAuthController::class, 'demoteFromAdmin']);
-            
-            // Gestão de Status e Edição
             Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
             Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
-            
-            // Exclusão
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
         });
     });
