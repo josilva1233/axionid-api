@@ -25,13 +25,13 @@ class SocialAuthController extends Controller
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
             
-            // Busca por google_id OU email
+            // 1. Busca por google_id OU email (Cenários 1 e 3)
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
             if (!$user) {
-                // CENÁRIO 2: Novo usuário (Sem cadastro manual)
+                // Cenário 2: Usuário novo
                 $user = User::create([
                     'name'        => $googleUser->name,
                     'email'       => $googleUser->email,
@@ -40,7 +40,7 @@ class SocialAuthController extends Controller
                     'from_google' => true,
                 ]);
             } else {
-                // CENÁRIO 1: Já tinha manual, grava o google_id agora
+                // Cenário 1: Já existia manual, vincula o google_id agora
                 if (empty($user->google_id)) {
                     $user->update([
                         'google_id' => $googleUser->id,
@@ -52,19 +52,18 @@ class SocialAuthController extends Controller
             $token = $user->createToken('axion_token')->plainTextToken;
             $state = $request->input('state');
             parse_str($state, $result);
-            $frontendUrl = $result['origin'] ?? env('FRONTEND_URL');
+            $frontendUrl = rtrim($result['origin'] ?? env('FRONTEND_URL'), '/');
 
-            // Prepara os parâmetros para o Front
-            $params = [
+            // Prepara os parâmetros (Atenção à URL limpa com apenas um '?')
+            $params = http_build_query([
                 'token'     => $token,
                 'is_admin'  => $user->is_admin ? '1' : '0',
                 'name'      => $user->name,
                 'email'     => $user->email,
                 'needs_cpf' => empty($user->cpf_cnpj) ? 'true' : 'false'
-            ];
+            ]);
 
-            // CENÁRIO 3: Se tem CPF e google_id (garantido acima), loga direto
-            return redirect("{$frontendUrl}/??" . http_build_query($params));
+            return redirect("{$frontendUrl}/?{$params}");
 
         } catch (\Exception $e) {
             return redirect(env('FRONTEND_URL') . "/?error=auth_failed");
