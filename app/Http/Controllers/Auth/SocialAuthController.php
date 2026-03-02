@@ -11,6 +11,9 @@ use Laravel\Socialite\Facades\Socialite;
 
 class SocialAuthController extends Controller
 {
+    /**
+     * Redireciona para o Google
+     */
     public function redirectToGoogle(Request $request)
     {
         $origin = $request->query('origin', env('FRONTEND_URL'));
@@ -20,6 +23,9 @@ class SocialAuthController extends Controller
             ->redirect();
     }
 
+    /**
+     * Callback do Google
+     */
     public function handleGoogleCallback(Request $request)
     {
         try {
@@ -31,7 +37,7 @@ class SocialAuthController extends Controller
                         ->first();
 
             if (!$user) {
-                // CENÁRIO 2: Novo usuário via Google
+                // CENÁRIO: Novo usuário via Google
                 $user = User::create([
                     'name'        => $googleUser->name,
                     'email'       => $googleUser->email,
@@ -40,7 +46,7 @@ class SocialAuthController extends Controller
                     'from_google' => true,
                 ]);
             } else {
-                // CENÁRIO 1: Já tinha cadastro manual, grava o ID agora
+                // CENÁRIO: Já tinha cadastro manual, vincula o ID agora
                 if (empty($user->google_id)) {
                     $user->update([
                         'google_id' => $googleUser->id,
@@ -68,5 +74,36 @@ class SocialAuthController extends Controller
         } catch (\Exception $e) {
             return redirect(env('FRONTEND_URL') . "/?error=auth_failed");
         }
+    }
+
+    /**
+     * NOVO MÉTODO: Finaliza o perfil (Grava CPF e Senha)
+     * Rota: POST /api/v1/complete-profile (Protegida por Sanctum)
+     */
+    public function completeProfile(Request $request)
+    {
+        // O Sanctum identifica o usuário pelo Token enviado no Header
+        $user = $request->user(); 
+
+        if (!$user) {
+            return response()->json(['message' => 'Usuário não identificado.'], 401);
+        }
+
+        $request->validate([
+            'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
+            'password' => 'required|min:6|confirmed',
+        ]);
+
+        // Faz o UPDATE do registro que o handleGoogleCallback criou
+        $user->update([
+            'cpf_cnpj' => $request->cpf_cnpj,
+            'password'  => Hash::make($request->password),
+            'profile_completed' => true, 
+        ]);
+
+        return response()->json([
+            'message' => 'Perfil completado com sucesso!',
+            'user' => $user
+        ]);
     }
 }
