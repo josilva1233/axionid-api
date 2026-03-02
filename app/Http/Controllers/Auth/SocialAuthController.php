@@ -25,13 +25,13 @@ class SocialAuthController extends Controller
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
             
-            // 1. Busca por google_id OU email (Cenários 1 e 3)
+            // 1. Busca por google_id OU email
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
             if (!$user) {
-                // Cenário 2: Usuário novo
+                // CENÁRIO 2: Novo usuário via Google
                 $user = User::create([
                     'name'        => $googleUser->name,
                     'email'       => $googleUser->email,
@@ -40,7 +40,7 @@ class SocialAuthController extends Controller
                     'from_google' => true,
                 ]);
             } else {
-                // Cenário 1: Já existia manual, vincula o google_id agora
+                // CENÁRIO 1: Já tinha cadastro manual, grava o ID agora
                 if (empty($user->google_id)) {
                     $user->update([
                         'google_id' => $googleUser->id,
@@ -54,7 +54,7 @@ class SocialAuthController extends Controller
             parse_str($state, $result);
             $frontendUrl = rtrim($result['origin'] ?? env('FRONTEND_URL'), '/');
 
-            // Prepara os parâmetros (Atenção à URL limpa com apenas um '?')
+            // Parâmetros para o Front decidir o cenário
             $params = http_build_query([
                 'token'     => $token,
                 'is_admin'  => $user->is_admin ? '1' : '0',
