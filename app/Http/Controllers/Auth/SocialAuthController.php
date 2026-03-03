@@ -24,70 +24,74 @@ class SocialAuthController extends Controller
             ->redirect();
     }
 
-    /**
-     * Callback do Google
-     */
-    public function handleGoogleCallback(Request $request)
-    {
-        try {
-            $googleUser = Socialite::driver('google')->stateless()->user();
+public function handleGoogleCallback(Request $request)
+{
+    try {
+        $googleUser = Socialite::driver('google')->stateless()->user();
 
-            // 🔎 Busca por google_id OU email
-            $user = User::where('google_id', $googleUser->id)
-                        ->orWhere('email', $googleUser->email)
-                        ->first();
+        // 🔎 Busca usuário
+        $user = User::where('google_id', $googleUser->id)
+                    ->orWhere('email', $googleUser->email)
+                    ->first();
 
-            if (!$user) {
-                // 🆕 Novo usuário via Google
-                $user = User::create([
-                    'name'        => $googleUser->name,
-                    'email'       => $googleUser->email,
-                    'google_id'   => $googleUser->id,
-                    'password'    => Hash::make(Str::random(24)),
-                    'from_google' => true,
-                    'profile_completed' => false,
-                ]);
-            } else {
-                // 🔗 Vincula Google se já existia cadastro manual
-                if (empty($user->google_id)) {
-                    $user->update([
-                        'google_id'   => $googleUser->id,
-                        'from_google' => true
-                    ]);
-                }
-            }
-
-            // 🔐 Cria Token Sanctum
-            $token = $user->createToken('axion_token')->plainTextToken;
-
-            // 🔄 Recupera origem enviada no state
-            $state = $request->input('state');
-            parse_str($state, $result);
-
-            $frontendUrl = rtrim(
-                $result['origin'] ?? env('FRONTEND_URL'),
-                '/'
-            );
-
-            // 🔎 Verifica se precisa completar CPF
-            $needsCpf = empty($user->cpf_cnpj);
-
-            // 📦 Parâmetros enviados ao Front
-            $params = http_build_query([
-                'token'     => $token,
-                'is_admin'  => $user->is_admin ? '1' : '0',
-                'name'      => $user->name,
-                'email'     => $user->email,
-                'needs_cpf' => $needsCpf ? 'true' : 'false'
+        if (!$user) {
+            // 🆕 Novo usuário
+            $user = User::create([
+                'name'              => $googleUser->name,
+                'email'             => $googleUser->email,
+                'google_id'         => $googleUser->id,
+                'password'          => Hash::make(Str::random(24)),
+                'from_google'       => true,
+                'profile_completed' => false,
             ]);
-
-            // 🚀 REDIRECIONAMENTO CORRETO
-            return redirect("{$frontendUrl}/register?{$params}");
-
-        } catch (\Exception $e) {
-            return redirect(env('FRONTEND_URL') . "/login?error=auth_failed");
+        } else {
+            // 🔗 Vincula Google se necessário
+            if (empty($user->google_id)) {
+                $user->update([
+                    'google_id'   => $googleUser->id,
+                    'from_google' => true
+                ]);
+            }
         }
+
+        // 🔐 Cria token
+        $token = $user->createToken('axion_token')->plainTextToken;
+
+        // 🔄 Recupera origem
+        $state = $request->input('state');
+        parse_str($state, $result);
+
+        $frontendUrl = rtrim(
+            $result['origin'] ?? env('FRONTEND_URL'),
+            '/'
+        );
+
+        // 🔥 ATUALIZA O USER DO BANCO
+        $user->refresh();
+
+        $needsCpf = !$user->profile_completed;
+
+        // ✅ Se perfil já está completo → vai direto para dashboard
+        if (!$needsCpf) {
+            return redirect("{$frontendUrl}/dashboard?token={$token}");
+        }
+
+        // 🆕 Se precisa completar perfil → vai para register
+        $params = http_build_query([
+            'token'     => $token,
+            'is_admin'  => $user->is_admin ? '1' : '0',
+            'name'      => $user->name,
+            'email'     => $user->email,
+            'needs_cpf' => 'true'
+        ]);
+
+        return redirect("{$frontendUrl}/register?{$params}");
+
+    } catch (\Exception $e) {
+        return redirect(env('FRONTEND_URL') . "/login?error=auth_failed");
     }
+}
+
 
     /**
      * Finaliza o perfil (Grava CPF e Senha)
