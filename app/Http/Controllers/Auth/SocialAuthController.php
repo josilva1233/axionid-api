@@ -30,39 +30,37 @@ class SocialAuthController extends Controller
     public function handleGoogleCallback(Request $request)
     {
         try {
-            $googleUser = Socialite::driver('google')
-                ->stateless()
-                ->user();
+            $googleUser = Socialite::driver('google')->stateless()->user();
 
-            // 🔎 Busca usuário pelo google_id ou email
+            // 🔎 Busca por google_id OU email
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
             if (!$user) {
-                // 🆕 Cria novo usuário
+                // 🆕 Novo usuário via Google
                 $user = User::create([
-                    'name'              => $googleUser->name,
-                    'email'             => $googleUser->email,
-                    'google_id'         => $googleUser->id,
-                    'password'          => Hash::make(Str::random(24)),
-                    'from_google'       => true,
+                    'name'        => $googleUser->name,
+                    'email'       => $googleUser->email,
+                    'google_id'   => $googleUser->id,
+                    'password'    => Hash::make(Str::random(24)),
+                    'from_google' => true,
                     'profile_completed' => false,
                 ]);
             } else {
-                // 🔗 Vincula google_id se ainda não estiver vinculado
+                // 🔗 Vincula Google se já existia cadastro manual
                 if (empty($user->google_id)) {
                     $user->update([
                         'google_id'   => $googleUser->id,
-                        'from_google' => true,
+                        'from_google' => true
                     ]);
                 }
             }
 
-            // 🔐 Gera token Sanctum
+            // 🔐 Cria Token Sanctum
             $token = $user->createToken('axion_token')->plainTextToken;
 
-            // 🔄 Recupera origem do frontend
+            // 🔄 Recupera origem enviada no state
             $state = $request->input('state');
             parse_str($state, $result);
 
@@ -71,12 +69,10 @@ class SocialAuthController extends Controller
                 '/'
             );
 
-            $user->refresh();
+            // 🔎 Verifica se precisa completar CPF
+            $needsCpf = empty($user->cpf_cnpj);
 
-            // 🔥 Define se precisa completar perfil
-            $needsCpf = !$user->profile_completed;
-
-            // 🔥 Monta parâmetros para frontend
+            // 📦 Parâmetros enviados ao Front
             $params = http_build_query([
                 'token'     => $token,
                 'is_admin'  => $user->is_admin ? '1' : '0',
@@ -85,16 +81,17 @@ class SocialAuthController extends Controller
                 'needs_cpf' => $needsCpf ? 'true' : 'false'
             ]);
 
-            // ✅ SEMPRE redireciona para raiz
-            return redirect("{$frontendUrl}/?{$params}");
+            // 🚀 REDIRECIONAMENTO CORRETO
+            return redirect("{$frontendUrl}/register?{$params}");
 
         } catch (\Exception $e) {
-            return redirect(env('FRONTEND_URL') . "/?error=auth_failed");
+            return redirect(env('FRONTEND_URL') . "/login?error=auth_failed");
         }
     }
 
     /**
-     * Completa perfil (CPF + Senha)
+     * Finaliza o perfil (Grava CPF e Senha)
+     * POST /api/v1/complete-profile
      */
     public function completeProfile(Request $request)
     {
@@ -112,9 +109,9 @@ class SocialAuthController extends Controller
         ]);
 
         $user->update([
-            'cpf_cnpj'          => $request->cpf_cnpj,
-            'password'          => Hash::make($request->password),
-            'profile_completed' => true,
+            'cpf_cnpj'         => $request->cpf_cnpj,
+            'password'         => Hash::make($request->password),
+            'profile_completed'=> true,
         ]);
 
         return response()->json([
