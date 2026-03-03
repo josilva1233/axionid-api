@@ -17,7 +17,7 @@ class SocialAuthController extends Controller
 
         return Socialite::driver('google')
             ->stateless()
-            ->with(['state' => 'origin=' . $origin])
+            ->with(['state' => base64_encode('origin=' . $origin)]) // 🔧 CORRIGIDO: base64 para evitar problemas de parsing
             ->redirect();
     }
 
@@ -51,19 +51,21 @@ class SocialAuthController extends Controller
             // Criar Token Sanctum
             $token = $user->createToken('axion_token')->plainTextToken;
 
+            // 🔧 CORRIGIDO: Parse do state com base64
             $state = $request->input('state');
-            parse_str($state, $result);
+            $decodedState = base64_decode($state);
+            parse_str($decodedState, $result);
             $frontendUrl = rtrim($result['origin'] ?? env('FRONTEND_URL'), '/');
 
             // Verifica se precisa completar dados
             $needsCpf = empty($user->cpf_cnpj);
 
             $params = http_build_query([
-                'token'     => $token,
-                'is_admin'  => $user->is_admin ? '1' : '0',
-                'name'      => $user->name,
-                'email'     => $user->email,
-                'needs_cpf' => $needsCpf ? 'true' : 'false'
+                'token'      => $token,
+                'is_admin'   => $user->is_admin ? '1' : '0',
+                'name'       => $user->name,
+                'email'      => $user->email,
+                'needs_cpf'  => $needsCpf ? 'true' : 'false'
             ]);
 
             // Se precisar de CPF, manda para Register, senão Login (que processa o token)
@@ -71,13 +73,14 @@ class SocialAuthController extends Controller
             return redirect("{$frontendUrl}/{$targetPath}?{$params}");
 
         } catch (\Exception $e) {
+            \Log::error('Google Auth Error: ' . $e->getMessage()); // 🔧 ADICIONADO: Log para debug
             return redirect(env('FRONTEND_URL') . "/login?error=auth_failed");
         }
     }
 
     public function completeProfile(Request $request)
     {
-        // O Sanctum deve identificar o usuário pelo header Authorization
+        // Mantém exatamente igual
         $user = $request->user();
 
         if (!$user) {
@@ -98,7 +101,7 @@ class SocialAuthController extends Controller
         return response()->json([
             'message' => 'Perfil completado com sucesso!',
             'user'    => $user,
-            'token'   => $request->bearerToken() // Retorna o mesmo token para manter a sessão
+            'token'   => $request->bearerToken()
         ]);
     }
 }
