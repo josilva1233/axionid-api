@@ -9,11 +9,11 @@ use Illuminate\Support\Facades\DB;
 
 /*
 |--------------------------------------------------------------------------
-| API Routes - AxionID (COMPLETO E CORRIGIDO)
+| API Routes - AxionID
 |--------------------------------------------------------------------------
 */
 
-// 🔧 Health Check (mantido)
+// Health Check
 Route::get('/health', function() {
     try {
         DB::connection()->getPdo();
@@ -30,28 +30,31 @@ Route::get('/health', function() {
 Route::prefix('v1')->group(function () {
     
     // ---------------------------------------------------------
-    // ✅ ROTAS PÚBLICAS - SEM AUTENTICAÇÃO
+    // ROTAS PÚBLICAS
     // ---------------------------------------------------------
     Route::post('/register', [AxionAuthController::class, 'register']);
     Route::post('/login', [AxionAuthController::class, 'login']);
 
-    // 🔐 Autenticação Social (Google) - PÚBLICO
+    // Autenticação Social (Google)
     Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
     Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
     
-    // 🔑 Recuperação de Senha - PÚBLICO
+    // Rotas de Recuperação de Senha
     Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/verify-code', [PasswordResetController::class, 'verifyCode']);
     Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']);
 
     // ---------------------------------------------------------
-    // 🔒 ROTAS PROTEGIDAS - Sanctum (Token obrigatório)
+    // ROTAS PROTEGIDAS (Sanctum)
     // ---------------------------------------------------------
     Route::middleware('auth:sanctum')->group(function () {
         
-        // 👤 Usuário autenticado
         Route::post('/logout', [AxionAuthController::class, 'logout']);
-        Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']); // ✅ Google + CPF
+        
+        // CORREÇÃO: Removido o "/v1/" daqui, pois o prefixo já existe no grupo pai
+        // Esta é a rota que o Front-end deve chamar para gravar o CPF
+        Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']);
+        
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
         
         Route::get('/me', function (Request $request) {
@@ -59,7 +62,7 @@ Route::prefix('v1')->group(function () {
         });
 
         // ---------------------------------------------------------
-        // 👑 PAINEL ADMINISTRATIVO (is_admin = 1)
+        // PAINEL ADMINISTRATIVO (is_admin = 1)
         // ---------------------------------------------------------
         Route::middleware('admin')->group(function () {
             Route::get('/users', [AxionAuthController::class, 'index']);
