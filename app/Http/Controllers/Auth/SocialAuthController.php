@@ -34,13 +34,13 @@ class SocialAuthController extends Controller
                 ->stateless()
                 ->user();
 
-            // 🔎 Busca usuário
+            // 🔎 Busca usuário pelo google_id ou email
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
             if (!$user) {
-                // 🆕 Novo usuário
+                // 🆕 Cria novo usuário
                 $user = User::create([
                     'name'              => $googleUser->name,
                     'email'             => $googleUser->email,
@@ -50,19 +50,19 @@ class SocialAuthController extends Controller
                     'profile_completed' => false,
                 ]);
             } else {
-                // 🔗 Vincula Google se necessário
+                // 🔗 Vincula google_id se ainda não estiver vinculado
                 if (empty($user->google_id)) {
                     $user->update([
                         'google_id'   => $googleUser->id,
-                        'from_google' => true
+                        'from_google' => true,
                     ]);
                 }
             }
 
-            // 🔐 Cria token
+            // 🔐 Gera token Sanctum
             $token = $user->createToken('axion_token')->plainTextToken;
 
-            // 🔄 Recupera origem
+            // 🔄 Recupera origem do frontend
             $state = $request->input('state');
             parse_str($state, $result);
 
@@ -73,16 +73,19 @@ class SocialAuthController extends Controller
 
             $user->refresh();
 
-            // 🔥 MONTA PARÂMETROS
+            // 🔥 Define se precisa completar perfil
+            $needsCpf = !$user->profile_completed;
+
+            // 🔥 Monta parâmetros para frontend
             $params = http_build_query([
                 'token'     => $token,
                 'is_admin'  => $user->is_admin ? '1' : '0',
                 'name'      => $user->name,
                 'email'     => $user->email,
-                'needs_cpf' => $user->profile_completed ? 'false' : 'true'
+                'needs_cpf' => $needsCpf ? 'true' : 'false'
             ]);
 
-            // ✅ SEMPRE VOLTA PARA A RAIZ
+            // ✅ SEMPRE redireciona para raiz
             return redirect("{$frontendUrl}/?{$params}");
 
         } catch (\Exception $e) {
@@ -91,7 +94,7 @@ class SocialAuthController extends Controller
     }
 
     /**
-     * Finaliza o perfil
+     * Completa perfil (CPF + Senha)
      */
     public function completeProfile(Request $request)
     {
