@@ -17,6 +17,7 @@ class SocialAuthController extends Controller
     public function redirectToGoogle(Request $request)
     {
         $origin = $request->query('origin', env('FRONTEND_URL'));
+
         return Socialite::driver('google')
             ->stateless()
             ->with(['state' => 'origin=' . $origin])
@@ -30,63 +31,76 @@ class SocialAuthController extends Controller
     {
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
-            
-            // 1. Busca por google_id OU email
+
+            // 🔎 Busca por google_id OU email
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
             if (!$user) {
-                // CENÁRIO: Novo usuário via Google
+                // 🆕 Novo usuário via Google
                 $user = User::create([
                     'name'        => $googleUser->name,
                     'email'       => $googleUser->email,
                     'google_id'   => $googleUser->id,
                     'password'    => Hash::make(Str::random(24)),
                     'from_google' => true,
+                    'profile_completed' => false,
                 ]);
             } else {
-                // CENÁRIO: Já tinha cadastro manual, vincula o ID agora
+                // 🔗 Vincula Google se já existia cadastro manual
                 if (empty($user->google_id)) {
                     $user->update([
-                        'google_id' => $googleUser->id,
-                        'from_google' => true 
+                        'google_id'   => $googleUser->id,
+                        'from_google' => true
                     ]);
                 }
             }
 
+            // 🔐 Cria Token Sanctum
             $token = $user->createToken('axion_token')->plainTextToken;
+
+            // 🔄 Recupera origem enviada no state
             $state = $request->input('state');
             parse_str($state, $result);
-            $frontendUrl = rtrim($result['origin'] ?? env('FRONTEND_URL'), '/');
 
-            // Parâmetros para o Front decidir o cenário
+            $frontendUrl = rtrim(
+                $result['origin'] ?? env('FRONTEND_URL'),
+                '/'
+            );
+
+            // 🔎 Verifica se precisa completar CPF
+            $needsCpf = empty($user->cpf_cnpj);
+
+            // 📦 Parâmetros enviados ao Front
             $params = http_build_query([
                 'token'     => $token,
                 'is_admin'  => $user->is_admin ? '1' : '0',
                 'name'      => $user->name,
                 'email'     => $user->email,
-                'needs_cpf' => empty($user->cpf_cnpj) ? 'true' : 'false'
+                'needs_cpf' => $needsCpf ? 'true' : 'false'
             ]);
 
-            return redirect("{$frontendUrl}/?{$params}");
+            // 🚀 REDIRECIONAMENTO CORRETO
+            return redirect("{$frontendUrl}/register?{$params}");
 
         } catch (\Exception $e) {
-            return redirect(env('FRONTEND_URL') . "/?error=auth_failed");
+            return redirect(env('FRONTEND_URL') . "/login?error=auth_failed");
         }
     }
 
     /**
-     * NOVO MÉTODO: Finaliza o perfil (Grava CPF e Senha)
-     * Rota: POST /api/v1/complete-profile (Protegida por Sanctum)
+     * Finaliza o perfil (Grava CPF e Senha)
+     * POST /api/v1/complete-profile
      */
     public function completeProfile(Request $request)
     {
-        // O Sanctum identifica o usuário pelo Token enviado no Header
-        $user = $request->user(); 
+        $user = $request->user();
 
         if (!$user) {
-            return response()->json(['message' => 'Usuário não identificado.'], 401);
+            return response()->json([
+                'message' => 'Usuário não identificado.'
+            ], 401);
         }
 
         $request->validate([
@@ -94,16 +108,15 @@ class SocialAuthController extends Controller
             'password' => 'required|min:6|confirmed',
         ]);
 
-        // Faz o UPDATE do registro que o handleGoogleCallback criou
         $user->update([
-            'cpf_cnpj' => $request->cpf_cnpj,
-            'password'  => Hash::make($request->password),
-            'profile_completed' => true, 
+            'cpf_cnpj'         => $request->cpf_cnpj,
+            'password'         => Hash::make($request->password),
+            'profile_completed'=> true,
         ]);
 
         return response()->json([
             'message' => 'Perfil completado com sucesso!',
-            'user' => $user
+            'user'    => $user
         ]);
     }
 }
