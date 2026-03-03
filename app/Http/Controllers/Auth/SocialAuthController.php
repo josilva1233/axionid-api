@@ -67,7 +67,7 @@ class SocialAuthController extends Controller
             ]);
 
             // Se precisar de CPF, manda para Register, senão Login (que processa o token)
-            $targetPath = $needsCpf ? 'register' : 'login';
+            $targetPath = $needsCpf ? 'register' : 'dashboard';
             return redirect("{$frontendUrl}/{$targetPath}?{$params}");
 
         } catch (\Exception $e) {
