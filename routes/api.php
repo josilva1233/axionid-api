@@ -52,10 +52,16 @@ Route::prefix('v1')->group(function () {
             return $request->user()->load('address');
         });
 
-        // Admin
-        Route::middleware('admin')->group(function () {
-            Route::get('/users', [AxionAuthController::class, 'index']);
-            Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
-        });
+Route::middleware('admin')->group(function () {
+        Route::get('/users', [AxionAuthController::class, 'index']);
+        
+        // ADICIONE ESTAS LINHAS ABAIXO:
+        Route::post('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
+        Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
+        Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
+        Route::get('/audit-logs', [AxionAuthController::class, 'auditLogs']);
+        
+        Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
+    });
     });
 });
