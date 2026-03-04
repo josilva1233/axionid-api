@@ -11,108 +11,89 @@ use Laravel\Socialite\Facades\Socialite;
 
 class SocialAuthController extends Controller
 {
-    /**
-     * Redireciona para o Google
-     */
     public function redirectToGoogle(Request $request)
     {
-        $origin = $request->query('origin', config('app.frontend_url'));
-
-        // Guarda o origin na sessão
-        session(['google_origin' => $origin]);
-
+        $origin = $request->query('origin', env('FRONTEND_URL'));
         return Socialite::driver('google')
             ->stateless()
+            ->with(['state' => 'origin=' . $origin])
             ->redirect();
     }
 
-    /**
-     * Callback do Google
-     */
     public function handleGoogleCallback(Request $request)
     {
         try {
-            $googleUser = Socialite::driver('google')
-                ->stateless()
-                ->user();
-
-            // Busca usuário por google_id ou email
+            $googleUser = Socialite::driver('google')->stateless()->user();
+            
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
             if (!$user) {
                 $user = User::create([
-                    'name'            => $googleUser->name,
-                    'email'           => $googleUser->email,
-                    'google_id'       => $googleUser->id,
-                    'password'        => Hash::make(Str::random(24)),
-                    'from_google'     => true,
-                    'profile_completed' => false,
-                ]);
-            } else {
-                $user->update([
-                    'google_id'   => $googleUser->id,
+                    'name'      => $googleUser->name,
+                    'email'     => $googleUser->email,
+                    'google_id' => $googleUser->id,
+                    'password'  => Hash::make(Str::random(24)),
                     'from_google' => true,
                 ]);
+            } else {
+                $user->update(['google_id' => $googleUser->id]);
             }
 
-            // Cria token Sanctum
             $token = $user->createToken('axion_token')->plainTextToken;
 
-            $frontendUrl = session('google_origin', config('app.frontend_url'));
+            $state = $request->input('state');
+            parse_str($state, $result);
+            $frontendUrl = $result['origin'] ?? env('FRONTEND_URL');
 
-            // Se não tiver CPF/CNPJ → precisa completar cadastro
+            // Se não tem CPF, manda para o registro passo 2 com os dados
             if (empty($user->cpf_cnpj)) {
-
                 $params = http_build_query([
-                    'token'       => $token,
-                    'step'        => 2,
+                    'token' => $token,
+                    'step' => 2,
                     'from_google' => 'true',
-                    'name'        => $user->name,
-                    'email'       => $user->email
+                    'name' => $user->name,
+                    'email' => $user->email
                 ]);
-
                 return redirect("{$frontendUrl}/register?{$params}");
             }
 
-            // Se já tiver cadastro completo
             return redirect("{$frontendUrl}/dashboard?token={$token}");
 
         } catch (\Exception $e) {
-
-            return redirect(config('app.frontend_url') . "/?error=auth_failed");
+            return redirect(env('FRONTEND_URL') . "/?error=auth_failed");
         }
     }
 
     /**
-     * Completa o perfil (CPF + Senha)
-     * Requer auth:sanctum
+     * Salva o CPF e a Senha do usuário vindo do Google
      */
-    public function completeProfile(Request $request)
-    {
-        $user = $request->user();
+/**
+ * Completa o perfil gravando apenas CPF/CNPJ e Senha.
+ * O usuário é identificado automaticamente pelo Token (Sanctum).
+ */
+public function completeProfile(Request $request)
+{
+    // 1. Pega o usuário autenticado pelo token
+    $user = $request->user();
 
-        if (!$user) {
-            return response()->json([
-                'message' => 'Usuário não autenticado.'
-            ], 401);
-        }
+    // 2. Valida os dados (CPF obrigatório e Senha com confirmação)
+    $request->validate([
+        'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
+        'password' => 'required|min:6|confirmed',
+    ]);
 
-        $request->validate([
-            'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
-            'password' => 'required|min:6|confirmed',
-        ]);
+    // 3. Faz o update apenas das colunas necessárias
+    $user->update([
+        'cpf_cnpj' => $request->cpf_cnpj,
+        'password'  => Hash::make($request->password),
+        'profile_completed' => true, // Marca como completo para o próximo login ir direto pro Dashboard
+    ]);
 
-        $user->update([
-            'cpf_cnpj'         => $request->cpf_cnpj,
-            'password'         => Hash::make($request->password),
-            'profile_completed'=> true,
-        ]);
-
-        return response()->json([
-            'message' => 'Cadastro finalizado com sucesso!',
-            'user' => $user
-        ]);
-    }
+    return response()->json([
+        'message' => 'Cadastro finalizado com sucesso!',
+        'user' => $user
+    ]);
+}
 }

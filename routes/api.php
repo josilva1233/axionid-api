@@ -1,91 +1,118 @@
 <?php
 
-use App\Http\Controllers\Auth\AxionAuthController;
-use App\Http\Controllers\Auth\PasswordResetController;
-use App\Http\Controllers\Auth\SocialAuthController;
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Laravel\Socialite\Facades\Socialite;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes - AxionID
-|--------------------------------------------------------------------------
-*/
+class SocialAuthController extends Controller
+{
+    /**
+     * Redireciona para o Google
+     */
+    public function redirectToGoogle(Request $request)
+    {
+        $origin = $request->query('origin', config('app.frontend_url'));
 
-Route::get('/health', function () {
-    try {
-        DB::connection()->getPdo();
-        $dbStatus = 'Connected';
-    } catch (\Exception $e) {
-        $dbStatus = 'Disconnected';
+        // Guarda o origin na sessão
+        session(['google_origin' => $origin]);
+
+        return Socialite::driver('google')
+            ->stateless()
+            ->redirect();
     }
 
-    return response()->json([
-        'status'   => 'UP',
-        'database' => $dbStatus,
-    ], $dbStatus === 'Connected' ? 200 : 503);
-});
+    /**
+     * Callback do Google
+     */
+    public function handleGoogleCallback(Request $request)
+    {
+        try {
+            $googleUser = Socialite::driver('google')
+                ->stateless()
+                ->user();
 
-Route::prefix('v1')->group(function () {
+            // Busca usuário por google_id ou email
+            $user = User::where('google_id', $googleUser->id)
+                        ->orWhere('email', $googleUser->email)
+                        ->first();
 
-    /*
-    |--------------------------------------------------------------------------
-    | 🔓 ROTAS PÚBLICAS
-    |--------------------------------------------------------------------------
-    */
+            if (!$user) {
+                $user = User::create([
+                    'name'            => $googleUser->name,
+                    'email'           => $googleUser->email,
+                    'google_id'       => $googleUser->id,
+                    'password'        => Hash::make(Str::random(24)),
+                    'from_google'     => true,
+                    'profile_completed' => false,
+                ]);
+            } else {
+                $user->update([
+                    'google_id'   => $googleUser->id,
+                    'from_google' => true,
+                ]);
+            }
 
-    Route::post('/register', [AxionAuthController::class, 'register']);
-    Route::post('/login', [AxionAuthController::class, 'login']);
+            // Cria token Sanctum
+            $token = $user->createToken('axion_token')->plainTextToken;
 
-    // 🔐 Google OAuth
-    Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle'])
-        ->name('google.redirect');
+            $frontendUrl = session('google_origin', config('app.frontend_url'));
 
-    Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback'])
-        ->name('google.callback');
+            // Se não tiver CPF/CNPJ → precisa completar cadastro
+            if (empty($user->cpf_cnpj)) {
 
-    // 🔁 Recuperação de senha
-    Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink']);
-    Route::post('/verify-code', [PasswordResetController::class, 'verifyCode']);
-    Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']);
+                $params = http_build_query([
+                    'token'       => $token,
+                    'step'        => 2,
+                    'from_google' => 'true',
+                    'name'        => $user->name,
+                    'email'       => $user->email
+                ]);
 
-    /*
-    |--------------------------------------------------------------------------
-    | 🔒 ROTAS PROTEGIDAS (Sanctum)
-    |--------------------------------------------------------------------------
-    */
+                return redirect("{$frontendUrl}/register?{$params}");
+            }
 
-    Route::middleware('auth:sanctum')->group(function () {
+            // Se já tiver cadastro completo
+            return redirect("{$frontendUrl}/dashboard?token={$token}");
 
-        Route::post('/logout', [AxionAuthController::class, 'logout']);
+        } catch (\Exception $e) {
 
-        // ✅ Completar cadastro Google
-        Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']);
+            return redirect(config('app.frontend_url') . "/?error=auth_failed");
+        }
+    }
 
-        Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']);
+    /**
+     * Completa o perfil (CPF + Senha)
+     * Requer auth:sanctum
+     */
+    public function completeProfile(Request $request)
+    {
+        $user = $request->user();
 
-        Route::get('/me', function (Request $request) {
-            return $request->user()->load('address');
-        });
+        if (!$user) {
+            return response()->json([
+                'message' => 'Usuário não autenticado.'
+            ], 401);
+        }
 
-        /*
-        |--------------------------------------------------------------------------
-        | 👑 ADMIN (middleware admin)
-        |--------------------------------------------------------------------------
-        */
+        $request->validate([
+            'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
+            'password' => 'required|min:6|confirmed',
+        ]);
 
-        Route::middleware('admin')->group(function () {
+        $user->update([
+            'cpf_cnpj'         => $request->cpf_cnpj,
+            'password'         => Hash::make($request->password),
+            'profile_completed'=> true,
+        ]);
 
-            Route::get('/users', [AxionAuthController::class, 'index']);
-            Route::get('/audit-logs', [AxionAuthController::class, 'auditLogs']);
-
-            Route::patch('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
-            Route::patch('/users/{id}/demote', [AxionAuthController::class, 'demoteFromAdmin']);
-            Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
-
-            Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
-            Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
-        });
-    });
-});
+        return response()->json([
+            'message' => 'Cadastro finalizado com sucesso!',
+            'user' => $user
+        ]);
+    }
+}
