@@ -33,8 +33,6 @@ Route::prefix('v1')->group(function () {
     Route::post('/register', [AxionAuthController::class, 'register']);
     Route::post('/login', [AxionAuthController::class, 'login']);
 
-    Route::post('/users/{id}/remove-admin', [AxionAuthController::class, 'removeAdmin']);
-
     // Recuperação de Senha (Sempre Públicas)
     Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/verify-code', [PasswordResetController::class, 'verifyCode']);
@@ -47,6 +45,7 @@ Route::prefix('v1')->group(function () {
     // Rotas Protegidas
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AxionAuthController::class, 'logout']);
+        Route::post('/users/{id}/remove-admin', [AxionAuthController::class, 'removeAdmin']);
         Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']); // Chamada do Step 2 do Google
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
         Route::get('/users/{id}', [AxionAuthController::class, 'show']);
