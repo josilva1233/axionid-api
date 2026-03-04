@@ -29,55 +29,32 @@ Route::get('/health', function() {
 
 Route::prefix('v1')->group(function () {
     
-    // ---------------------------------------------------------
-    // ROTAS PÚBLICAS
-    // ---------------------------------------------------------
+    // Autenticação
     Route::post('/register', [AxionAuthController::class, 'register']);
     Route::post('/login', [AxionAuthController::class, 'login']);
-    Route::middleware('auth:sanctum')->post('v1/complete-profile', [SocialAuthController::class, 'completeProfile']);
 
-    // Autenticação Social (Google)
-    Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
-    Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
-    
-    // Rotas de Recuperação de Senha
+    // Recuperação de Senha (Sempre Públicas)
     Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/verify-code', [PasswordResetController::class, 'verifyCode']);
     Route::post('/reset-password', [PasswordResetController::class, 'resetPassword']);
 
-    // ---------------------------------------------------------
-    // ROTAS PROTEGIDAS (Sanctum)
-    // ---------------------------------------------------------
+    // Google Auth
+    Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
+    Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
+    
+    // Rotas Protegidas
     Route::middleware('auth:sanctum')->group(function () {
-        
         Route::post('/logout', [AxionAuthController::class, 'logout']);
-        
-        // CORREÇÃO: Função de salvar CPF no SocialAuthController
-        Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']);
-        
+        Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']); // Chamada do Step 2 do Google
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
         
         Route::get('/me', function (Request $request) {
             return $request->user()->load('address');
         });
 
-        // ---------------------------------------------------------
-        // PAINEL ADMINISTRATIVO (is_admin = 1)
-        // ---------------------------------------------------------
+        // Admin
         Route::middleware('admin')->group(function () {
-            // Listagem e Auditoria
             Route::get('/users', [AxionAuthController::class, 'index']);
-            Route::get('/audit-logs', [AxionAuthController::class, 'auditLogs']);
-            
-            // Gestão de Privilégios
-            Route::patch('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
-            Route::patch('/users/{id}/demote', [AxionAuthController::class, 'demoteFromAdmin']);
-            
-            // Gestão de Status e Edição
-            Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
-            Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
-            
-            // Exclusão
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
         });
     });

@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Auth;
 
-use OpenApi\Attributes as OA;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,57 +13,45 @@ use Carbon\Carbon;
 
 class PasswordResetController extends Controller
 {
-    #[OA\Post(
-        path: '/api/v1/forgot-password',
-        summary: '1. Solicitar código de recuperação',
-        tags: ['Recuperação de Senha'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(properties: [
-                new OA\Property(property: 'email', type: 'string', example: 'josilva1233@gmail.com')
-            ])
-        ),
-        responses: [new OA\Response(response: 200, description: 'Código enviado')]
-    )]
     public function sendResetLink(Request $request)
     {
         $request->validate(['email' => 'required|email']);
-        $user = User::where('email', $request->email)->first();
+        
+        // Padroniza e-mail para minúsculo
+        $email = strtolower($request->email);
+        $user = User::where('email', $email)->first();
         
         if (!$user) {
             return response()->json(['message' => 'Usuário não encontrado.'], 404);
         }
 
+        // Gera código de 6 dígitos alfanuméricos
         $token = strtoupper(Str::random(6)); 
 
+        // Salva ou atualiza o token na tabela padrão do Laravel
         DB::table('password_reset_tokens')->updateOrInsert(
-            ['email' => $request->email],
-            ['token' => $token, 'created_at' => now()]
+            ['email' => $email],
+            [
+                'token' => $token, // Aqui você pode usar Hash::make($token) para mais segurança
+                'created_at' => now()
+            ]
         );
 
-        Mail::raw("Seu código de recuperação AxionID é: $token", function ($message) use ($request) {
-            $message->to($request->email)->subject('Recuperação de Senha - AxionID');
-        });
+        // Envio do e-mail
+        try {
+            Mail::raw("Seu código de recuperação AxionID é: $token. Ele expira em 60 minutos.", function ($message) use ($email) {
+                $message->to($email)->subject('Recuperação de Senha - AxionID');
+            });
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Erro ao enviar e-mail. Tente novamente.'], 500);
+        }
 
         return response()->json([
             'message' => 'Código de recuperação enviado com sucesso para seu e-mail.',
-            'code_debug' => $token 
+            'code_debug' => $token // Remova em produção
         ]);
     }
 
-    #[OA\Post(
-        path: '/api/v1/verify-code',
-        summary: '2. Validar código recebido',
-        tags: ['Recuperação de Senha'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(properties: [
-                new OA\Property(property: 'email', type: 'string', example: 'josilva1233@gmail.com'),
-                new OA\Property(property: 'token', type: 'string', example: 'ABC123')
-            ])
-        ),
-        responses: [new OA\Response(response: 200, description: 'Código válido')]
-    )]
     public function verifyCode(Request $request)
     {
         $request->validate([
@@ -72,36 +59,24 @@ class PasswordResetController extends Controller
             'token' => 'required'
         ]);
 
+        $email = strtolower($request->email);
         $reset = DB::table('password_reset_tokens')
-            ->where('email', $request->email)
+            ->where('email', $email)
             ->where('token', $request->token)
             ->first();
 
-        if (!$reset || Carbon::parse($reset->created_at)->addMinutes(60)->isPast()) {
-            return response()->json(['message' => 'Código inválido ou expirado.'], 422);
+        if (!$reset) {
+            return response()->json(['message' => 'Código inválido.'], 422);
+        }
+
+        // Verifica se expirou (60 minutos)
+        if (Carbon::parse($reset->created_at)->addMinutes(60)->isPast()) {
+            return response()->json(['message' => 'Este código expirou.'], 422);
         }
 
         return response()->json(['message' => 'Código validado! Prossiga para redefinir a senha.']);
     }
 
-    #[OA\Post(
-        path: '/api/v1/reset-password',
-        summary: '3. Definir nova senha',
-        tags: ['Recuperação de Senha'],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(properties: [
-                new OA\Property(property: 'email', type: 'string', example: 'josilva1233@gmail.com'),
-                new OA\Property(property: 'token', type: 'string', example: 'ABC123'),
-                new OA\Property(property: 'password', type: 'string', example: 'nova_senha123'),
-                new OA\Property(property: 'password_confirmation', type: 'string', example: 'nova_senha123')
-            ])
-        ),
-        responses: [
-            new OA\Response(response: 200, description: 'Senha alterada com sucesso'),
-            new OA\Response(response: 422, description: 'Erro de validação')
-        ]
-    )]
     public function resetPassword(Request $request)
     {
         $request->validate([
@@ -110,20 +85,29 @@ class PasswordResetController extends Controller
             'password' => 'required|min:8|confirmed',
         ]);
 
+        $email = strtolower($request->email);
+
+        // Valida se o token ainda é válido antes de trocar a senha
         $reset = DB::table('password_reset_tokens')
-            ->where('email', $request->email)
+            ->where('email', $email)
             ->where('token', $request->token)
             ->first();
 
-        if (!$reset) {
-            return response()->json(['message' => 'Operação inválida.'], 422);
+        if (!$reset || Carbon::parse($reset->created_at)->addMinutes(60)->isPast()) {
+            return response()->json(['message' => 'Token inválido ou expirado. Inicie o processo novamente.'], 422);
         }
 
-        $user = User::where('email', $request->email)->first();
+        $user = User::where('email', $email)->first();
+        if (!$user) {
+            return response()->json(['message' => 'Usuário não encontrado.'], 404);
+        }
+
+        // Atualiza a senha e marca profile como completo (opcional)
         $user->password = Hash::make($request->password);
         $user->save();
 
-        DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+        // Deleta o token para não ser usado novamente
+        DB::table('password_reset_tokens')->where('email', $email)->delete();
 
         return response()->json(['message' => 'Senha alterada com sucesso!']);
     }

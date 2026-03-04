@@ -16,9 +16,22 @@ return new class extends Migration
             $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
+            
+            // Colunas para Integrações
             $table->string('google_id')->nullable()->unique();
             $table->string('govbr_id')->nullable()->unique();
+            
+            // O CPF/CNPJ deve ser único e nulo inicialmente para quem vem do Google
+            $table->string('cpf_cnpj')->nullable()->unique(); 
+            
             $table->string('password');
+
+            // Controle de Status e Permissões
+            $table->boolean('profile_completed')->default(false); // Vital para o Step 2 do Google
+            $table->boolean('is_admin')->default(false);          // Vital para o Painel Administrativo
+            $table->boolean('is_active')->default(true);          // Para bloqueio de usuários
+            $table->boolean('from_google')->default(false);       // Identifica origem do cadastro
+
             $table->rememberToken();
             $table->timestamps();
         });
