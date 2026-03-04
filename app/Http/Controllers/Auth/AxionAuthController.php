@@ -241,4 +241,38 @@ public function show($id)
 
     return response()->json(['data' => $user]);
 }
+
+    public function destroy($id)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+
+        $user = User::find($id);
+        if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
+
+        $user->delete();
+        return response()->json(['message' => 'Usuário deletado com sucesso.']);
+    }
+
+    public function removeAdmin($id)
+{
+    // Verifica se quem está tentando remover é um admin
+    if (!Auth::user()->is_admin) {
+        return response()->json(['message' => 'Acesso negado.'], 403);
+    }
+
+    $user = User::find($id);
+    
+    if (!$user) {
+        return response()->json(['message' => 'Usuário não encontrado.'], 404);
+    }
+
+    // Impede que o admin remova a si mesmo (evita ficar sem nenhum admin no sistema)
+    if ($user->id === Auth::id()) {
+        return response()->json(['message' => 'Você não pode remover seu próprio acesso administrativo.'], 400);
+    }
+
+    $user->update(['is_admin' => false]);
+    
+    return response()->json(['message' => 'Privilégios administrativos removidos com sucesso.']);
+}
 }
