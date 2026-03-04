@@ -34,7 +34,6 @@ Route::prefix('v1')->group(function () {
     // ---------------------------------------------------------
     Route::post('/register', [AxionAuthController::class, 'register']);
     Route::post('/login', [AxionAuthController::class, 'login']);
-    Route::middleware('auth:sanctum')->post('/v1/complete-profile', [SocialAuthController::class, 'completeProfile']);
 
     // Autenticação Social (Google)
     Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
@@ -52,7 +51,7 @@ Route::prefix('v1')->group(function () {
         
         Route::post('/logout', [AxionAuthController::class, 'logout']);
         
-        // Finalização de perfil para quem vem do Google (Onde gravamos o CPF)
+        // CORREÇÃO: Função de salvar CPF no SocialAuthController
         Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']);
         
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
@@ -65,12 +64,19 @@ Route::prefix('v1')->group(function () {
         // PAINEL ADMINISTRATIVO (is_admin = 1)
         // ---------------------------------------------------------
         Route::middleware('admin')->group(function () {
+            // Listagem e Auditoria
             Route::get('/users', [AxionAuthController::class, 'index']);
             Route::get('/audit-logs', [AxionAuthController::class, 'auditLogs']);
+            
+            // Gestão de Privilégios
             Route::patch('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
             Route::patch('/users/{id}/demote', [AxionAuthController::class, 'demoteFromAdmin']);
+            
+            // Gestão de Status e Edição
             Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
             Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
+            
+            // Exclusão
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
         });
     });
