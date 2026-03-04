@@ -14,7 +14,6 @@ class SocialAuthController extends Controller
     public function redirectToGoogle(Request $request)
     {
         $origin = $request->query('origin', config('app.frontend_url'));
-
         return Socialite::driver('google')
             ->stateless()
             ->with(['state' => 'origin=' . $origin])
@@ -32,25 +31,22 @@ class SocialAuthController extends Controller
 
             if (!$user) {
                 $user = User::create([
-                    'name'      => $googleUser->name,
-                    'email'     => $googleUser->email,
-                    'google_id' => $googleUser->id,
-                    'password'  => Hash::make(Str::random(24)),
+                    'name'        => $googleUser->name,
+                    'email'       => $googleUser->email,
+                    'google_id'   => $googleUser->id,
+                    'password'    => Hash::make(Str::random(24)),
                     'from_google' => true,
-                    'profile_completed' => false
                 ]);
             } else {
                 $user->update(['google_id' => $googleUser->id]);
             }
 
             $token = $user->createToken('axion_token')->plainTextToken;
-
-            // Recupera a origem do state
             $state = $request->input('state');
             parse_str($state, $result);
             $frontendUrl = rtrim($result['origin'] ?? config('app.frontend_url'), '/');
 
-            // Lógica de Redirecionamento
+            // Se falta CPF, vai para o Register passo 2. Se tem, vai pro Dashboard.
             if (empty($user->cpf_cnpj)) {
                 $params = http_build_query([
                     'token' => $token,
@@ -80,13 +76,10 @@ class SocialAuthController extends Controller
 
         $user->update([
             'cpf_cnpj' => $request->cpf_cnpj,
-            'password'  => Hash::make($request->password),
+            'password' => Hash::make($request->password),
             'profile_completed' => true,
         ]);
 
-        return response()->json([
-            'message' => 'Cadastro finalizado com sucesso!',
-            'user' => $user
-        ]);
+        return response()->json(['message' => 'Perfil atualizado!', 'user' => $user]);
     }
 }
