@@ -60,6 +60,7 @@ class SocialAuthController extends Controller
                     'token'       => $token,
                     'step'        => 2,
                     'from_google' => 'true',
+                    'is_admin' => $isAdmin,
                     'name'        => $user->name,
                     'email'       => $user->email
                 ]);
