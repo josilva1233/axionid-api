@@ -229,4 +229,16 @@ class AxionAuthController extends Controller
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Sessão encerrada com sucesso!']);
     }
+    // No AxionAuthController.php
+public function show($id)
+{
+    if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+
+    // Busca o usuário específico com o endereço
+    $user = User::with('address')->find($id);
+
+    if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
+
+    return response()->json(['data' => $user]);
+}
 }
