@@ -47,7 +47,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/logout', [AxionAuthController::class, 'logout']);
         Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']); // Chamada do Step 2 do Google
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
-        
+        Route::get('/users/{id}', [AxionAuthController::class, 'show']);
         Route::get('/me', function (Request $request) {
             return $request->user()->load('address');
         });
