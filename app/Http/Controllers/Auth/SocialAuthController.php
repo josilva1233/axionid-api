@@ -31,7 +31,15 @@ class SocialAuthController extends Controller
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
+            if ($user->is_active == 0) {
+                $state = $request->input('state');
+                parse_str($state, $result);
+                $frontendUrl = rtrim($result['origin'] ?? config('app.frontend_url'), '/');
 
+                // Redireciona com um parâmetro de erro específico
+                return redirect("{$frontendUrl}/login?error=account_suspended");
+            }
+            
             if (!$user) {
                 // PRIMEIRO GRAVAÇÃO: Apenas dados básicos do Google
                 $user = User::create([
