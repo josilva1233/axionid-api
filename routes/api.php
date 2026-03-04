@@ -34,6 +34,7 @@ Route::prefix('v1')->group(function () {
     // ---------------------------------------------------------
     Route::post('/register', [AxionAuthController::class, 'register']);
     Route::post('/login', [AxionAuthController::class, 'login']);
+    Route::middleware('auth:sanctum')->post('v1/complete-profile', [SocialAuthController::class, 'completeProfile']);
 
     // Autenticação Social (Google)
     Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
