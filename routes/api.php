@@ -33,6 +33,8 @@ Route::prefix('v1')->group(function () {
     Route::post('/register', [AxionAuthController::class, 'register']);
     Route::post('/login', [AxionAuthController::class, 'login']);
 
+    Route::post('/users/{id}/remove-admin', [AxionAuthController::class, 'removeAdmin']);
+
     // Recuperação de Senha (Sempre Públicas)
     Route::post('/forgot-password', [PasswordResetController::class, 'sendResetLink']);
     Route::post('/verify-code', [PasswordResetController::class, 'verifyCode']);
