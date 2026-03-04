@@ -60,16 +60,18 @@ class SocialAuthController extends Controller
                     'token'       => $token,
                     'step'        => 2,
                     'from_google' => 'true',
-                    'is_admin' => $isAdmin,
                     'name'        => $user->name,
-                    'email'       => $user->email
+                    'email'       => $user->email,
+                    'is_admin'    => $user->is_admin
                 ]);
                 return redirect("{$frontendUrl}/register?{$params}");
             }
-
-            // SE JÁ TEM CPF: Vai direto para o Dashboard
-            //return redirect("{$frontendUrl}/dashboard?token={$token}");
-            return redirect("{$frontendUrl}/login?token={$token}");
+// SE JÁ TEM CPF: Vai direto para o Dashboard
+// Usamos http_build_query para garantir que a URL seja montada corretamente
+$loginParams = http_build_query([
+    'token' => $token,
+    'is_admin' => $isAdmin // <--- Adicionado aqui
+]);
 
         } catch (\Exception $e) {
             return redirect(config('app.frontend_url') . "/?error=auth_failed");
