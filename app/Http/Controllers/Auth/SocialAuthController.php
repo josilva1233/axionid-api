@@ -61,13 +61,13 @@ class SocialAuthController extends Controller
                     'step'        => 2,
                     'from_google' => 'true',
                     'name'        => $user->name,
-                    'email'       => $user->email,
-                    'is_admin'    => $isAdmin
+                    'email'       => $user->email
                 ]);
                 return redirect("{$frontendUrl}/register?{$params}");
             }
 
             // SE JÁ TEM CPF: Vai direto para o Dashboard
+
             return redirect("{$frontendUrl}/login?token={$token}");
 
         } catch (\Exception $e) {
