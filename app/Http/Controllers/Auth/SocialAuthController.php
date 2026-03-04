@@ -67,7 +67,8 @@ class SocialAuthController extends Controller
             }
 
             // SE JÁ TEM CPF: Vai direto para o Dashboard
-            return redirect("{$frontendUrl}/dashboard?token={$token}");
+            //return redirect("{$frontendUrl}/dashboard?token={$token}");
+            return redirect("{$frontendUrl}/login?token={$token}");
 
         } catch (\Exception $e) {
             return redirect(config('app.frontend_url') . "/?error=auth_failed");
