@@ -99,6 +99,13 @@ class SocialAuthController extends Controller
             'profile_completed' => true,
         ]);
 
+// 3. SALVAR O ENDEREÇO (Isso é o que faltava!)
+    // O método address() deve estar definido no seu Model User.php
+    $user->address()->updateOrCreate(
+        ['user_id' => $user->id], // Se já existir, atualiza. Se não, cria.
+        $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
+    );       
+
         return response()->json([
             'message' => 'Cadastro finalizado com sucesso!',
             'user'    => $user
