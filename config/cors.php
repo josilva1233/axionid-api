@@ -19,7 +19,12 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    // No config/cors.php
+'allowed_origins' => [
+    'https://axionid-front.vercel.app',
+    'https://outro-projeto.com',
+    'http://localhost:3000',
+],
 
     'allowed_origins_patterns' => [],
 
