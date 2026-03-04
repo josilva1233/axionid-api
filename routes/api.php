@@ -12,42 +12,41 @@ use Laravel\Socialite\Facades\Socialite;
 class SocialAuthController extends Controller
 {
     /**
-     * Redireciona para o Google
+     * Inicia o fluxo do Google.
+     * URL: /api/v1/auth/google?origin=https://seu-front.com
      */
     public function redirectToGoogle(Request $request)
     {
+        // Pega a URL do front que chamou ou usa a padrão do config
         $origin = $request->query('origin', config('app.frontend_url'));
 
-        // Guarda o origin na sessão
-        session(['google_origin' => $origin]);
-
+        // Passamos a origem dentro do 'state' para recuperar no callback
         return Socialite::driver('google')
             ->stateless()
+            ->with(['state' => 'origin=' . $origin])
             ->redirect();
     }
 
     /**
-     * Callback do Google
+     * Processa o retorno do Google.
      */
     public function handleGoogleCallback(Request $request)
     {
         try {
-            $googleUser = Socialite::driver('google')
-                ->stateless()
-                ->user();
+            $googleUser = Socialite::driver('google')->stateless()->user();
 
-            // Busca usuário por google_id ou email
+            // Busca por google_id ou email
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
 
             if (!$user) {
                 $user = User::create([
-                    'name'            => $googleUser->name,
-                    'email'           => $googleUser->email,
-                    'google_id'       => $googleUser->id,
-                    'password'        => Hash::make(Str::random(24)),
-                    'from_google'     => true,
+                    'name'              => $googleUser->name,
+                    'email'             => $googleUser->email,
+                    'google_id'         => $googleUser->id,
+                    'password'          => Hash::make(Str::random(24)),
+                    'from_google'       => true,
                     'profile_completed' => false,
                 ]);
             } else {
@@ -57,14 +56,16 @@ class SocialAuthController extends Controller
                 ]);
             }
 
-            // Cria token Sanctum
+            // Gera o Token Sanctum
             $token = $user->createToken('axion_token')->plainTextToken;
 
-            $frontendUrl = session('google_origin', config('app.frontend_url'));
+            // Recupera a origem do parâmetro 'state'
+            $state = $request->input('state');
+            parse_str($state, $result);
+            $frontendUrl = rtrim($result['origin'] ?? config('app.frontend_url'), '/');
 
-            // Se não tiver CPF/CNPJ → precisa completar cadastro
+            // Lógica de redirecionamento baseada no preenchimento do CPF
             if (empty($user->cpf_cnpj)) {
-
                 $params = http_build_query([
                     'token'       => $token,
                     'step'        => 2,
@@ -72,31 +73,25 @@ class SocialAuthController extends Controller
                     'name'        => $user->name,
                     'email'       => $user->email
                 ]);
-
                 return redirect("{$frontendUrl}/register?{$params}");
             }
 
-            // Se já tiver cadastro completo
             return redirect("{$frontendUrl}/dashboard?token={$token}");
 
         } catch (\Exception $e) {
-
-            return redirect(config('app.frontend_url') . "/?error=auth_failed");
+            return redirect(config('app.frontend_url') . "/login?error=auth_failed");
         }
     }
 
     /**
-     * Completa o perfil (CPF + Senha)
-     * Requer auth:sanctum
+     * Rota POST protegida para salvar CPF e Senha
      */
     public function completeProfile(Request $request)
     {
         $user = $request->user();
 
         if (!$user) {
-            return response()->json([
-                'message' => 'Usuário não autenticado.'
-            ], 401);
+            return response()->json(['message' => 'Usuário não identificado.'], 401);
         }
 
         $request->validate([
@@ -105,14 +100,14 @@ class SocialAuthController extends Controller
         ]);
 
         $user->update([
-            'cpf_cnpj'         => $request->cpf_cnpj,
-            'password'         => Hash::make($request->password),
-            'profile_completed'=> true,
+            'cpf_cnpj'          => $request->cpf_cnpj,
+            'password'          => Hash::make($request->password),
+            'profile_completed' => true,
         ]);
 
         return response()->json([
             'message' => 'Cadastro finalizado com sucesso!',
-            'user' => $user
+            'user'    => $user
         ]);
     }
 }
