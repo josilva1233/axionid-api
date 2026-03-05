@@ -214,15 +214,38 @@ class AxionAuthController extends Controller
     }
 
     public function auditLogs(Request $request)
-    {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-
-        $query = DB::table('audit_logs')->leftJoin('users', 'audit_logs.user_id', '=', 'users.id');
-        if ($request->filled('method')) $query->where('method', strtoupper($request->method));
-        if ($request->filled('date')) $query->whereDate('audit_logs.created_at', $request->date);
-
-        return response()->json($query->orderBy('created_at', 'desc')->paginate(20));
+{
+    // 1. Segurança
+    if (!Auth::user()->is_admin) {
+        return response()->json(['message' => 'Acesso negado.'], 403);
     }
+
+    // 2. Query específica
+    // Usamos select para evitar que o 'id' do usuário sobrescreva o 'id' do log
+    $query = DB::table('audit_logs')
+        ->leftJoin('users', 'audit_logs.user_id', '=', 'users.id')
+        ->select(
+            'audit_logs.id',
+            'audit_logs.action',
+            'audit_logs.method',
+            'audit_logs.ip_address',
+            'audit_logs.created_at',
+            'users.name as user_name',
+            'users.email as user_email'
+        );
+
+    // 3. Filtros
+    if ($request->filled('method')) {
+        $query->where('audit_logs.method', strtoupper($request->method));
+    }
+
+    if ($request->filled('date')) {
+        $query->whereDate('audit_logs.created_at', $request->date);
+    }
+
+    // 4. Execução
+    return response()->json($query->orderBy('audit_logs.created_at', 'desc')->paginate(20));
+}
 
     public function logout(Request $request)
     {
