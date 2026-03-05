@@ -213,28 +213,24 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Usuário atualizado com sucesso.', 'user' => $user]);
     }
 
-    public function auditLogs(Request $request)
+public function auditLogs(Request $request)
 {
-    // 1. Segurança
-    if (!Auth::user()->is_admin) {
-        return response()->json(['message' => 'Acesso negado.'], 403);
-    }
+    if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
 
-    // 2. Query específica
-    // Usamos select para evitar que o 'id' do usuário sobrescreva o 'id' do log
+    // Especificamos as colunas para evitar o erro de ambiguidade
     $query = DB::table('audit_logs')
         ->leftJoin('users', 'audit_logs.user_id', '=', 'users.id')
         ->select(
-            'audit_logs.id',
-            'audit_logs.action',
+            'audit_logs.id as log_id',
             'audit_logs.method',
+            'audit_logs.url',
             'audit_logs.ip_address',
-            'audit_logs.created_at',
+            'audit_logs.payload',
+            'audit_logs.created_at as executed_at', // Alias para não confundir com o do user
             'users.name as user_name',
             'users.email as user_email'
         );
 
-    // 3. Filtros
     if ($request->filled('method')) {
         $query->where('audit_logs.method', strtoupper($request->method));
     }
@@ -243,7 +239,7 @@ class AxionAuthController extends Controller
         $query->whereDate('audit_logs.created_at', $request->date);
     }
 
-    // 4. Execução
+    // Ordenação explícita pela tabela audit_logs
     return response()->json($query->orderBy('audit_logs.created_at', 'desc')->paginate(20));
 }
 
