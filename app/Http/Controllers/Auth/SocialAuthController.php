@@ -8,9 +8,28 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
+use OpenApi\Attributes as OA;
 
 class SocialAuthController extends Controller
 {
+    #[OA\Get(
+        path: '/api/v1/auth/google/redirect',
+        summary: '1. Redirecionar para o Google',
+        description: 'Inicia o fluxo OAuth2. O parâmetro "origin" define para onde o usuário volta após o login.',
+        tags: ['Autenticação Social'],
+        parameters: [
+            new OA\Parameter(
+                name: 'origin',
+                in: 'query',
+                description: 'URL do frontend (ex: http://localhost:3000)',
+                required: false,
+                schema: new OA\Schema(type: 'string')
+            )
+        ],
+        responses: [
+            new OA\Response(response: 302, description: 'Redirecionamento para a conta Google')
+        ]
+    )]
     public function redirectToGoogle(Request $request)
     {
         // Usa config() em vez de env() para evitar erros de cache
@@ -22,6 +41,15 @@ class SocialAuthController extends Controller
             ->redirect();
     }
 
+    #[OA\Get(
+        path: '/api/v1/auth/google/callback',
+        summary: '2. Callback do Google',
+        description: 'Endpoint processado pelo Google. Faz o login ou pré-cadastro e redireciona o navegador de volta para o frontend.',
+        tags: ['Autenticação Social'],
+        responses: [
+            new OA\Response(response: 302, description: 'Redireciona para /register (se novo) ou /login (se existente)')
+        ]
+    )]
     public function handleGoogleCallback(Request $request)
     {
         try {
@@ -31,7 +59,8 @@ class SocialAuthController extends Controller
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
-            if ($user->is_active == 0) {
+
+            if ($user && $user->is_active == 0) {
                 $state = $request->input('state');
                 parse_str($state, $result);
                 $frontendUrl = rtrim($result['origin'] ?? config('app.frontend_url'), '/');
@@ -75,7 +104,6 @@ class SocialAuthController extends Controller
             }
 
             // SE JÁ TEM CPF: Vai direto para o Dashboard
-
             return redirect("{$frontendUrl}/login?token={$token}");
 
         } catch (\Exception $e) {
@@ -83,11 +111,35 @@ class SocialAuthController extends Controller
         }
     }
 
-    /**
-     * SEGUNDA GRAVAÇÃO: Faz o update do CPF e Senha definitiva
-     * Rota: POST /api/v1/complete-profile
-     * Middleware: auth:sanctum
-     */
+    #[OA\Post(
+        path: '/api/v1/auth/google/complete-profile',
+        summary: '3. Finalizar cadastro (Google)',
+        description: 'Após o retorno do Google, o usuário deve definir CPF, Senha e Endereço para ativar a conta.',
+        tags: ['Autenticação Social'],
+        security: [['sanctum' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'cpf_cnpj', type: 'string', example: '12345678901'),
+                    new OA\Property(property: 'password', type: 'string', example: 'nova_senha123'),
+                    new OA\Property(property: 'password_confirmation', type: 'string', example: 'nova_senha123'),
+                    new OA\Property(property: 'zip_code', type: 'string', example: '01001000'),
+                    new OA\Property(property: 'street', type: 'string', example: 'Rua Exemplo'),
+                    new OA\Property(property: 'number', type: 'string', example: '10'),
+                    new OA\Property(property: 'neighborhood', type: 'string', example: 'Centro'),
+                    new OA\Property(property: 'city', type: 'string', example: 'São Paulo'),
+                    new OA\Property(property: 'state', type: 'string', example: 'SP'),
+                    new OA\Property(property: 'complement', type: 'string', example: 'Apto 101')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Perfil finalizado com sucesso'),
+            new OA\Response(response: 401, description: 'Não autorizado'),
+            new OA\Response(response: 422, description: 'Erro de validação ou CPF já em uso')
+        ]
+    )]
     public function completeProfile(Request $request)
     {
         $user = $request->user();
@@ -107,16 +159,15 @@ class SocialAuthController extends Controller
             'profile_completed' => true,
         ]);
 
-// 3. SALVAR O ENDEREÇO (Isso é o que faltava!)
-    // O método address() deve estar definido no seu Model User.php
-    $user->address()->updateOrCreate(
-        ['user_id' => $user->id], // Se já existir, atualiza. Se não, cria.
-        $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
-    );       
+        // 3. SALVAR O ENDEREÇO
+        $user->address()->updateOrCreate(
+            ['user_id' => $user->id],
+            $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
+        );       
 
         return response()->json([
             'message' => 'Cadastro finalizado com sucesso!',
-            'user'    => $user
+            'user'    => $user->load('address')
         ]);
     }
 }
