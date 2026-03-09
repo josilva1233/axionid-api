@@ -61,7 +61,7 @@ Route::middleware('admin')->group(function () {
         Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
         Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
         Route::get('/audit-logs', [AxionAuthController::class, 'auditLogs']);
-        
+        Route::put('/users/{id}', [AxionAuthController::class, 'adminUpdateUser']);
         Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
     });
     });
