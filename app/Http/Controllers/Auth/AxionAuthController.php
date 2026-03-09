@@ -142,6 +142,7 @@ class AxionAuthController extends Controller
             new OA\Response(response: 200, description: 'Perfil completado com sucesso')
         ]
     )]
+    
     public function completeProfile(Request $request)
     {
         $user = Auth::user();
@@ -202,16 +203,94 @@ class AxionAuthController extends Controller
 
         return response()->json(['message' => 'Status atualizado.', 'is_active' => $user->is_active]);
     }
-
-    public function adminUpdateUser(Request $request, $id)
-    {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-
-        $user = User::findOrFail($id);
-        $user->update($request->only(['name', 'email', 'cpf_cnpj']));
-
-        return response()->json(['message' => 'Usuário atualizado com sucesso.', 'user' => $user]);
+#[OA\Put(
+        path: '/api/v1/admin/users/{id}',
+        summary: 'Atualizar usuário e endereço (Admin)',
+        description: 'Permite que um administrador atualize o nome, e-mail e endereço do usuário. O CPF/CNPJ não pode ser alterado.',
+        tags: ['Administração'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'id',
+                in: 'path',
+                required: true,
+                description: 'ID do usuário',
+                schema: new OA\Schema(type: 'integer')
+            )
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    // Dados básicos (CPF removido por regra de negócio)
+                    new OA\Property(property: 'name', type: 'string', example: 'João Silva Atualizado'),
+                    new OA\Property(property: 'email', type: 'string', example: 'joao.novo@email.com'),
+                    
+                    // Dados de endereço
+                    new OA\Property(property: 'zip_code', type: 'string', example: '01001000'),
+                    new OA\Property(property: 'street', type: 'string', example: 'Nova Rua Exemplo'),
+                    new OA\Property(property: 'number', type: 'string', example: '456'),
+                    new OA\Property(property: 'neighborhood', type: 'string', example: 'Bairro Novo'),
+                    new OA\Property(property: 'city', type: 'string', example: 'São Paulo'),
+                    new OA\Property(property: 'state', type: 'string', example: 'SP'),
+                    new OA\Property(property: 'complement', type: 'string', example: 'Bloco B')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200, 
+                description: 'Usuário e endereço atualizados com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'user', type: 'object', description: 'Dados completos do usuário com endereço')
+                    ]
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 404, description: 'Usuário não encontrado')
+        ]
+    )]
+public function adminUpdateUser(Request $request, $id)
+{
+    // 1. Verificação de permissão
+    if (!Auth::user()->is_admin) {
+        return response()->json(['message' => 'Acesso negado.'], 403);
     }
+
+    // 2. Busca o usuário com o endereço carregado
+    $user = User::with('address')->find($id);
+
+    if (!$user) {
+        return response()->json(['message' => 'Usuário não encontrado.'], 404);
+    }
+
+    // 3. Atualização dos dados básicos do Usuário
+    // Removido 'cpf_cnpj' do only() para garantir que não seja alterado
+    $user->update($request->only(['name', 'email']));
+
+    // 4. Atualização ou Criação do Endereço
+    // Verifica se há dados de endereço na requisição antes de processar
+    $addressData = $request->only([
+        'zip_code', 'street', 'number', 
+        'neighborhood', 'city', 'state', 'complement'
+    ]);
+
+    if (!empty($addressData)) {
+        if ($user->address) {
+            $user->address->update($addressData);
+        } else {
+            $user->address()->create($addressData);
+        }
+    }
+
+    // 5. Retorno com todos os dados atualizados (incluindo o endereço)
+    return response()->json([
+        'message' => 'Usuário e endereço atualizados com sucesso.',
+        'user' => $user->load('address') 
+    ]);
+}
 
 public function auditLogs(Request $request)
 {
