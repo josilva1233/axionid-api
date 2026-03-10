@@ -164,6 +164,25 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Cadastro finalizado!', 'user' => $user->load('address')]);
     }
 
+    #[OA\Get(
+        path: '/api/v1/admin/users',
+        summary: 'Listar usuários (Admin)',
+        tags: ['Administração'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Lista de usuários paginada'),
+            new OA\Response(response: 403, description: 'Acesso negado')
+        ]
+    )]
+    public function index(Request $request)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $query = User::with('address');
+        if ($request->filled('name')) $query->where('name', 'like', '%' . $request->name . '%');
+        if ($request->has('completed')) $query->where('profile_completed', $request->completed);
+        return response()->json($query->orderBy('created_at', 'desc')->paginate(10));
+    }
+
     #[OA\Put(
         path: '/api/v1/admin/users/{id}',
         summary: 'Atualizar usuário e endereço (Admin)',
@@ -211,6 +230,8 @@ class AxionAuthController extends Controller
         $user = User::findOrFail($id);
         $admin = Auth::user();
 
+        if (!$admin->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+
         $validated = $request->validate([
             'name'  => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $id,
@@ -248,36 +269,16 @@ class AxionAuthController extends Controller
         ]);
     }
 
-    // --- Outros métodos permanecem com a lógica original ---
-
-    public function index(Request $request)
-    {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-        $query = User::with('address');
-        if ($request->filled('name')) $query->where('name', 'like', '%' . $request->name . '%');
-        if ($request->has('completed')) $query->where('profile_completed', $request->completed);
-        return response()->json($query->orderBy('created_at', 'desc')->paginate(10));
-    }
-
-    public function promoteToAdmin($id)
-    {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-        $user = User::find($id);
-        if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
-        $user->update(['is_admin' => true]);
-        return response()->json(['message' => 'Usuário agora é Admin.']);
-    }
-
-    public function toggleUserStatus($id)
-    {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-        $user = User::findOrFail($id);
-        if ($user->id === Auth::id()) return response()->json(['message' => 'Você não pode bloquear sua própria conta.'], 400);
-        $user->is_active = !$user->is_active;
-        $user->save();
-        return response()->json(['message' => 'Status atualizado.', 'is_active' => $user->is_active]);
-    }
-
+    #[OA\Get(
+        path: '/api/v1/admin/audit-logs',
+        summary: 'Ver logs de auditoria (Admin)',
+        tags: ['Administração'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Logs de auditoria'),
+            new OA\Response(response: 403, description: 'Acesso negado')
+        ]
+    )]
     public function auditLogs(Request $request)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -291,12 +292,34 @@ class AxionAuthController extends Controller
         return response()->json($query->orderBy('audit_logs.created_at', 'desc')->paginate(20));
     }
 
+    #[OA\Post(
+        path: '/api/v1/logout',
+        summary: 'Encerrar sessão',
+        tags: ['Autenticação'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Logout realizado com sucesso')
+        ]
+    )]
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Sessão encerrada com sucesso!']);
     }
 
+    #[OA\Get(
+        path: '/api/v1/admin/users/{id}',
+        summary: 'Exibir detalhes de um usuário (Admin)',
+        tags: ['Administração'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Dados do usuário'),
+            new OA\Response(response: 404, description: 'Usuário não encontrado')
+        ]
+    )]
     public function show($id)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -305,6 +328,19 @@ class AxionAuthController extends Controller
         return response()->json(['data' => $user]);
     }
 
+    #[OA\Delete(
+        path: '/api/v1/admin/users/{id}',
+        summary: 'Deletar usuário (Admin)',
+        tags: ['Administração'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Usuário removido'),
+            new OA\Response(response: 404, description: 'Usuário não encontrado')
+        ]
+    )]
     public function destroy($id)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -314,6 +350,61 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Usuário deletado com sucesso.']);
     }
 
+    #[OA\Patch(
+        path: '/api/v1/admin/users/{id}/toggle-status',
+        summary: 'Ativar/Desativar usuário (Admin)',
+        tags: ['Administração'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Status atualizado')
+        ]
+    )]
+    public function toggleUserStatus($id)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $user = User::findOrFail($id);
+        if ($user->id === Auth::id()) return response()->json(['message' => 'Você não pode bloquear sua própria conta.'], 400);
+        $user->is_active = !$user->is_active;
+        $user->save();
+        return response()->json(['message' => 'Status atualizado.', 'is_active' => $user->is_active]);
+    }
+
+    #[OA\Post(
+        path: '/api/v1/admin/users/{id}/promote',
+        summary: 'Promover a Administrador',
+        tags: ['Administração'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Promovido com sucesso')
+        ]
+    )]
+    public function promoteToAdmin($id)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $user = User::find($id);
+        if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
+        $user->update(['is_admin' => true]);
+        return response()->json(['message' => 'Usuário agora é Admin.']);
+    }
+
+    #[OA\Post(
+        path: '/api/v1/admin/users/{id}/demote',
+        summary: 'Remover privilégios de Admin',
+        tags: ['Administração'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Privilégios removidos')
+        ]
+    )]
     public function removeAdmin($id)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
@@ -321,6 +412,6 @@ class AxionAuthController extends Controller
         if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
         if ($user->id === Auth::id()) return response()->json(['message' => 'Impossível remover a si mesmo.'], 400);
         $user->update(['is_admin' => false]);
-        return response()->json(['message' => 'Privilégios removidos.']);
+        return response()->json(['message' => 'Privilégios removidos com sucesso.']);
     }
 }
