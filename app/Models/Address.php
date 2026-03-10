@@ -15,7 +15,9 @@ class Address extends Model
         'complement', 
         'neighborhood', 
         'city', 
-        'state'
+        'state',
+        'updated_by_admin_id', // Adicionar este
+        'admin_updated_at'     // Adicionar este
     ];
 
     // Relacionamento reverso (opcional, mas recomendado)
