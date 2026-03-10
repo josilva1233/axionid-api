@@ -24,7 +24,7 @@ class AxionAuthController extends Controller
                     new OA\Property(property: 'name', type: 'string', example: 'João Silva'),
                     new OA\Property(property: 'email', type: 'string', example: 'joao@email.com'),
                     new OA\Property(property: 'cpf_cnpj', type: 'string', example: '12345678901'),
-                    new OA\Property(property: 'google_id', type: 'string', example: '123456789kjooojjd01'),
+                    new OA\Property(property: 'google_id', type: 'string', example: '123456789kjooojjd01', nullable: true),
                     new OA\Property(property: 'password', type: 'string', example: 'senha123'),
                     new OA\Property(property: 'password_confirmation', type: 'string', example: 'senha123')
                 ]
@@ -37,7 +37,6 @@ class AxionAuthController extends Controller
     )]
     public function register(Request $request)
     {
-        // CORREÇÃO: Adicionado 'google_id' na validação para o Laravel aceitar o campo
         $validator = Validator::make($request->all(), [
             'name'      => 'required|string|max:255',
             'email'     => 'required|string|email|max:255|unique:users',
@@ -52,7 +51,6 @@ class AxionAuthController extends Controller
 
         $document = preg_replace('/[^0-9]/', '', $request->cpf_cnpj);
 
-        // CORREÇÃO: Atribuição direta do google_id vindo da Request
         $user = User::create([
             'name'              => $request->name,
             'email'             => $request->email,
@@ -134,15 +132,15 @@ class AxionAuthController extends Controller
                     new OA\Property(property: 'neighborhood', type: 'string', example: 'Bairro Centro'),
                     new OA\Property(property: 'city', type: 'string', example: 'São Paulo'),
                     new OA\Property(property: 'state', type: 'string', example: 'SP'),
-                    new OA\Property(property: 'complement', type: 'string', example: 'Apto 1')
+                    new OA\Property(property: 'complement', type: 'string', example: 'Apto 1', nullable: true)
                 ]
             )
         ),
         responses: [
-            new OA\Response(response: 200, description: 'Perfil completado com sucesso')
+            new OA\Response(response: 200, description: 'Perfil completado com sucesso'),
+            new OA\Response(response: 422, description: 'Erro de validação')
         ]
     )]
-    
     public function completeProfile(Request $request)
     {
         $user = Auth::user();
@@ -166,67 +164,21 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Cadastro finalizado!', 'user' => $user->load('address')]);
     }
 
-    // --- MÉTODOS DE ADMINISTRAÇÃO ---
-
-    public function index(Request $request)
-    {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-
-        $query = User::with('address');
-        if ($request->filled('name')) $query->where('name', 'like', '%' . $request->name . '%');
-        if ($request->has('completed')) $query->where('profile_completed', $request->completed);
-
-        return response()->json($query->orderBy('created_at', 'desc')->paginate(10));
-    }
-
-    public function promoteToAdmin($id)
-    {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-
-        $user = User::find($id);
-        if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
-        $user->update(['is_admin' => true]);
-        return response()->json(['message' => 'Usuário agora é Admin.']);
-    }
-
-    public function toggleUserStatus($id)
-    {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-
-        $user = User::findOrFail($id);
-        if ($user->id === Auth::id()) {
-            return response()->json(['message' => 'Você não pode bloquear sua própria conta.'], 400);
-        }
-
-        $user->is_active = !$user->is_active;
-        $user->save();
-
-        return response()->json(['message' => 'Status atualizado.', 'is_active' => $user->is_active]);
-    }
-#[OA\Put(
+    #[OA\Put(
         path: '/api/v1/admin/users/{id}',
         summary: 'Atualizar usuário e endereço (Admin)',
-        description: 'Permite que um administrador atualize o nome, e-mail e endereço do usuário. O CPF/CNPJ não pode ser alterado.',
+        description: 'Permite que um administrador atualize dados do usuário e endereço. Registra quem fez a alteração.',
         tags: ['Administração'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(
-                name: 'id',
-                in: 'path',
-                required: true,
-                description: 'ID do usuário que será atualizado',
-                schema: new OA\Schema(type: 'integer')
-            )
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
                 properties: [
-                    // Dados básicos do Usuário
                     new OA\Property(property: 'name', type: 'string', example: 'João Silva Atualizado'),
                     new OA\Property(property: 'email', type: 'string', example: 'joao.novo@email.com'),
-                    
-                    // Dados de endereço (Opcionais no Validate)
                     new OA\Property(property: 'zip_code', type: 'string', example: '01001000'),
                     new OA\Property(property: 'street', type: 'string', example: 'Nova Rua Exemplo'),
                     new OA\Property(property: 'number', type: 'string', example: '456'),
@@ -240,150 +192,135 @@ class AxionAuthController extends Controller
         responses: [
             new OA\Response(
                 response: 200, 
-                description: 'Usuário e endereço atualizados com sucesso',
+                description: 'Sucesso',
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: 'message', type: 'string', example: 'Usuário atualizado com sucesso pelo administrador'),
-                        new OA\Property(
-                            property: 'admin_info', 
-                            type: 'object',
-                            properties: [
-                                new OA\Property(property: 'admin_id', type: 'integer', example: 78),
-                                new OA\Property(property: 'updated_at', type: 'string', format: 'date-time', example: '2026-03-09 22:15:00')
-                            ]
-                        )
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'admin_info', type: 'object', properties: [
+                            new OA\Property(property: 'admin_id', type: 'integer'),
+                            new OA\Property(property: 'updated_at', type: 'string')
+                        ])
                     ]
                 )
             ),
-            new OA\Response(response: 403, description: 'Acesso negado - Usuário não é administrador'),
-            new OA\Response(response: 404, description: 'Usuário alvo não encontrado'),
-            new OA\Response(response: 422, description: 'Erro de validação nos dados enviados')
+            new OA\Response(response: 403, description: 'Acesso negado')
         ]
     )]
-public function adminUpdateUser(Request $request, $id)
-{
-    $user = User::findOrFail($id);
-    $admin = Auth::user(); // Coleta os dados do Admin logado
+    public function adminUpdateUser(Request $request, $id)
+    {
+        $user = User::findOrFail($id);
+        $admin = Auth::user();
 
-    $validated = $request->validate([
-        'name'  => 'required|string|max:255',
-        'email' => 'required|email|unique:users,email,' . $id,
-        'zip_code'     => 'nullable|string',
-        'street'       => 'nullable|string',
-        'number'       => 'nullable|string',
-        'neighborhood' => 'nullable|string',
-        'city'         => 'nullable|string',
-        'state'        => 'nullable|string',
-    ]);
+        $validated = $request->validate([
+            'name'  => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,' . $id,
+            'zip_code'     => 'nullable|string',
+            'street'       => 'nullable|string',
+            'number'       => 'nullable|string',
+            'neighborhood' => 'nullable|string',
+            'city'         => 'nullable|string',
+            'state'        => 'nullable|string',
+        ]);
 
-    // 1. Atualiza Usuário e já marca o perfil como completo (1)
-    $user->update([
-        'name'              => $validated['name'],
-        'email'             => $validated['email'],
-        'profile_completed' => true, // Garante que o Front-end pare de exibir o alerta
-    ]);
+        $user->update([
+            'name'              => $validated['name'],
+            'email'             => $validated['email'],
+            'profile_completed' => true,
+        ]);
 
-    // 2. Atualiza ou Cria Endereço
-    // Incluímos campos de auditoria no updateOrCreateqw
-    $user->address()->updateOrCreate(
-        ['user_id' => $user->id],
-        array_merge(
-            $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement']),
-            [
-                'updated_by_admin_id' => $admin->id, // ID do admin que alterou
-                'admin_updated_at'    => now(),      // Data e hora da alteração
-            ]
-        )
-    );
-
-    return response()->json([
-        'message' => 'Usuário atualizado com sucesso pelo administrador',
-        'admin_info' => [
-            'admin_id' => $admin->id,
-            'updated_at' => now()->toDateTimeString()
-        ]
-    ]);
-}
-
-public function auditLogs(Request $request)
-{
-    if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-
-    // Especificamos as colunas para evitar o erro de ambiguidade
-    $query = DB::table('audit_logs')
-        ->leftJoin('users', 'audit_logs.user_id', '=', 'users.id')
-        ->select(
-            'audit_logs.id as log_id',
-            'audit_logs.method',
-            'audit_logs.url',
-            'audit_logs.ip_address',
-            'audit_logs.payload',
-            'audit_logs.created_at as executed_at', // Alias para não confundir com o do user
-            'users.name as user_name',
-            'users.email as user_email'
+        $user->address()->updateOrCreate(
+            ['user_id' => $user->id],
+            array_merge(
+                $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement']),
+                [
+                    'updated_by_admin_id' => $admin->id,
+                    'admin_updated_at'    => now(),
+                ]
+            )
         );
 
-    if ($request->filled('method')) {
-        $query->where('audit_logs.method', strtoupper($request->method));
+        return response()->json([
+            'message' => 'Usuário atualizado com sucesso pelo administrador',
+            'admin_info' => [
+                'admin_id' => $admin->id,
+                'updated_at' => now()->toDateTimeString()
+            ]
+        ]);
     }
 
-    if ($request->filled('date')) {
-        $query->whereDate('audit_logs.created_at', $request->date);
+    // --- Outros métodos permanecem com a lógica original ---
+
+    public function index(Request $request)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $query = User::with('address');
+        if ($request->filled('name')) $query->where('name', 'like', '%' . $request->name . '%');
+        if ($request->has('completed')) $query->where('profile_completed', $request->completed);
+        return response()->json($query->orderBy('created_at', 'desc')->paginate(10));
     }
 
-    // Ordenação explícita pela tabela audit_logs
-    return response()->json($query->orderBy('audit_logs.created_at', 'desc')->paginate(20));
-}
+    public function promoteToAdmin($id)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $user = User::find($id);
+        if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
+        $user->update(['is_admin' => true]);
+        return response()->json(['message' => 'Usuário agora é Admin.']);
+    }
+
+    public function toggleUserStatus($id)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $user = User::findOrFail($id);
+        if ($user->id === Auth::id()) return response()->json(['message' => 'Você não pode bloquear sua própria conta.'], 400);
+        $user->is_active = !$user->is_active;
+        $user->save();
+        return response()->json(['message' => 'Status atualizado.', 'is_active' => $user->is_active]);
+    }
+
+    public function auditLogs(Request $request)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $query = DB::table('audit_logs')
+            ->leftJoin('users', 'audit_logs.user_id', '=', 'users.id')
+            ->select('audit_logs.*', 'users.name as user_name', 'users.email as user_email');
+
+        if ($request->filled('method')) $query->where('audit_logs.method', strtoupper($request->method));
+        if ($request->filled('date')) $query->whereDate('audit_logs.created_at', $request->date);
+
+        return response()->json($query->orderBy('audit_logs.created_at', 'desc')->paginate(20));
+    }
 
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Sessão encerrada com sucesso!']);
     }
-    // No AxionAuthController.php
-public function show($id)
-{
-    if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
 
-    // Busca o usuário específico com o endereço
-    $user = User::with('address')->find($id);
-
-    if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
-
-    return response()->json(['data' => $user]);
-}
+    public function show($id)
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $user = User::with('address')->find($id);
+        if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
+        return response()->json(['data' => $user]);
+    }
 
     public function destroy($id)
     {
         if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
-
         $user = User::find($id);
         if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
-
         $user->delete();
         return response()->json(['message' => 'Usuário deletado com sucesso.']);
     }
 
     public function removeAdmin($id)
-{
-    // Verifica se quem está tentando remover é um admin
-    if (!Auth::user()->is_admin) {
-        return response()->json(['message' => 'Acesso negado.'], 403);
+    {
+        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        $user = User::find($id);
+        if (!$user) return response()->json(['message' => 'Usuário não encontrado.'], 404);
+        if ($user->id === Auth::id()) return response()->json(['message' => 'Impossível remover a si mesmo.'], 400);
+        $user->update(['is_admin' => false]);
+        return response()->json(['message' => 'Privilégios removidos.']);
     }
-
-    $user = User::find($id);
-    
-    if (!$user) {
-        return response()->json(['message' => 'Usuário não encontrado.'], 404);
-    }
-
-    // Impede que o admin remova a si mesmo (evita ficar sem nenhum admin no sistema)
-    if ($user->id === Auth::id()) {
-        return response()->json(['message' => 'Você não pode remover seu próprio acesso administrativo.'], 400);
-    }
-
-    $user->update(['is_admin' => false]);
-    
-    return response()->json(['message' => 'Privilégios administrativos removidos com sucesso.']);
-}
 }
