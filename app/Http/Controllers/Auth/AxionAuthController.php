@@ -214,7 +214,7 @@ class AxionAuthController extends Controller
                 name: 'id',
                 in: 'path',
                 required: true,
-                description: 'ID do usuário',
+                description: 'ID do usuário que será atualizado',
                 schema: new OA\Schema(type: 'integer')
             )
         ],
@@ -222,18 +222,18 @@ class AxionAuthController extends Controller
             required: true,
             content: new OA\JsonContent(
                 properties: [
-                    // Dados básicos (CPF removido por regra de negócio)
+                    // Dados básicos do Usuário
                     new OA\Property(property: 'name', type: 'string', example: 'João Silva Atualizado'),
                     new OA\Property(property: 'email', type: 'string', example: 'joao.novo@email.com'),
                     
-                    // Dados de endereço
+                    // Dados de endereço (Opcionais no Validate)
                     new OA\Property(property: 'zip_code', type: 'string', example: '01001000'),
                     new OA\Property(property: 'street', type: 'string', example: 'Nova Rua Exemplo'),
                     new OA\Property(property: 'number', type: 'string', example: '456'),
                     new OA\Property(property: 'neighborhood', type: 'string', example: 'Bairro Novo'),
                     new OA\Property(property: 'city', type: 'string', example: 'São Paulo'),
                     new OA\Property(property: 'state', type: 'string', example: 'SP'),
-                    new OA\Property(property: 'complement', type: 'string', example: 'Bloco B')
+                    new OA\Property(property: 'complement', type: 'string', example: 'Bloco B', nullable: true)
                 ]
             )
         ),
@@ -243,13 +243,21 @@ class AxionAuthController extends Controller
                 description: 'Usuário e endereço atualizados com sucesso',
                 content: new OA\JsonContent(
                     properties: [
-                        new OA\Property(property: 'message', type: 'string'),
-                        new OA\Property(property: 'user', type: 'object', description: 'Dados completos do usuário com endereço')
+                        new OA\Property(property: 'message', type: 'string', example: 'Usuário atualizado com sucesso pelo administrador'),
+                        new OA\Property(
+                            property: 'admin_info', 
+                            type: 'object',
+                            properties: [
+                                new OA\Property(property: 'admin_id', type: 'integer', example: 78),
+                                new OA\Property(property: 'updated_at', type: 'string', format: 'date-time', example: '2026-03-09 22:15:00')
+                            ]
+                        )
                     ]
                 )
             ),
-            new OA\Response(response: 403, description: 'Acesso negado'),
-            new OA\Response(response: 404, description: 'Usuário não encontrado')
+            new OA\Response(response: 403, description: 'Acesso negado - Usuário não é administrador'),
+            new OA\Response(response: 404, description: 'Usuário alvo não encontrado'),
+            new OA\Response(response: 422, description: 'Erro de validação nos dados enviados')
         ]
     )]
 public function adminUpdateUser(Request $request, $id)
