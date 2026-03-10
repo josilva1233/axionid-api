@@ -276,7 +276,7 @@ public function adminUpdateUser(Request $request, $id)
     ]);
 
     // 2. Atualiza ou Cria Endereço
-    // Incluímos campos de auditoria no updateOrCreate
+    // Incluímos campos de auditoria no updateOrCreateqw
     $user->address()->updateOrCreate(
         ['user_id' => $user->id],
         array_merge(
