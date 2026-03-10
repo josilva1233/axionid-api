@@ -7,9 +7,9 @@ use App\Models\Group;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Validator;
 use OpenApi\Attributes as OA;
 
+#[OA\Tag(name: 'Grupos', description: 'Gerenciamento de grupos e membros')]
 class AxionGroupController extends Controller
 {
     #[OA\Post(
@@ -19,9 +19,16 @@ class AxionGroupController extends Controller
         security: [['sanctum' => []]],
         requestBody: new OA\RequestBody(
             required: true,
-            content: new OA\JsonContent(properties: [new OA\Property(property: 'name', type: 'string', example: 'Grupo Financeiro')])
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', example: 'Grupo Financeiro')
+                ]
+            )
         ),
-        responses: [new OA\Response(response: 201, description: 'Grupo criado')]
+        responses: [
+            new OA\Response(response: 201, description: 'Grupo criado'),
+            new OA\Response(response: 401, description: 'Não autenticado')
+        ]
     )]
     public function store(Request $request)
     {
@@ -39,7 +46,10 @@ class AxionGroupController extends Controller
         parameters: [
             new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
-        responses: [new OA\Response(response: 200, description: 'Dados do grupo')]
+        responses: [
+            new OA\Response(response: 200, description: 'Dados do grupo'),
+            new OA\Response(response: 403, description: 'Acesso negado')
+        ]
     )]
     public function show($id)
     {
@@ -59,9 +69,16 @@ class AxionGroupController extends Controller
             new OA\Parameter(name: 'group_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         requestBody: new OA\RequestBody(
-            content: new OA\JsonContent(properties: [new OA\Property(property: 'user_id', type: 'integer')])
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'user_id', type: 'integer', example: 5)
+                ]
+            )
         ),
-        responses: [new OA\Response(response: 200, description: 'Membro adicionado')]
+        responses: [
+            new OA\Response(response: 200, description: 'Membro adicionado'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
     )]
     public function addMember(Request $request, $groupId)
     {
@@ -85,7 +102,9 @@ class AxionGroupController extends Controller
             new OA\Parameter(name: 'group_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
             new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
-        responses: [new OA\Response(response: 200, description: 'Promovido')]
+        responses: [
+            new OA\Response(response: 200, description: 'Promovido')
+        ]
     )]
     public function promoteMember($groupId, $userId)
     {
@@ -105,7 +124,9 @@ class AxionGroupController extends Controller
             new OA\Parameter(name: 'group_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
             new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
-        responses: [new OA\Response(response: 200, description: 'Removido')]
+        responses: [
+            new OA\Response(response: 200, description: 'Removido')
+        ]
     )]
     public function removeMember($groupId, $userId)
     {
