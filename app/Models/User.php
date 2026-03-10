@@ -53,4 +53,10 @@ class User extends Authenticatable
     {
         return $this->hasOne(Address::class);
     }
+
+    public function groups()
+    {
+    // O campo 'role' na tabela pivô define se é 'admin' ou 'member'
+       return $this->belongsToMany(Group::class)->withPivot('role')->withTimestamps();
+    }
 }
