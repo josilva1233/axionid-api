@@ -15,23 +15,29 @@ use OpenApi\Attributes as OA;
 class AxionGroupController extends Controller
 {
     #[OA\Get(
-        path: '/api/v1/admin/groups',
-        summary: 'Listar todos os grupos (Apenas Super Admin)',
+        path: '/api/v1/groups',
+        summary: 'Listar grupos (Usuário vê os seus, Admin vê todos)',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         responses: [
-            new OA\Response(response: 200, description: 'Lista de todos os grupos do sistema'),
-            new OA\Response(response: 403, description: 'Acesso negado')
+            new OA\Response(response: 200, description: 'Lista de grupos filtrada por permissão'),
+            new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
-    public function index()
+    public function index(Request $request)
     {
-        // Regra: Somente admin do sistema (total) pode ver tudo
-        if (!Auth::user()->is_admin) {
-            return response()->json(['message' => 'Acesso negado. Requer privilégios de administrador do sistema.'], 403);
+        $user = Auth::user();
+
+        // Se for Super Admin do sistema, traz todos os grupos do banco
+        if ($user->is_admin) {
+            $groups = Group::with(['creator', 'users'])->paginate(15);
+        } else {
+            // Se for usuário comum, traz apenas os grupos criados por ele
+            $groups = Group::where('creator_id', $user->id)
+                ->with(['creator', 'users'])
+                ->paginate(15);
         }
 
-        $groups = Group::with(['creator', 'users'])->paginate(15);
         return response()->json($groups);
     }
 
@@ -136,7 +142,6 @@ class AxionGroupController extends Controller
     {
         $group = Group::findOrFail($groupId);
         
-        // Se for Admin do sistema, ignora a verificação de role de grupo
         $isSystemAdmin = Auth::user()->is_admin;
         $isGroupAdmin = $group->users()
             ->where('user_id', Auth::id())
@@ -221,13 +226,15 @@ class AxionGroupController extends Controller
             ->wherePivot('role', 'admin')
             ->exists();
 
-        // Admin do sistema pode remover qualquer um. 
-        // Se não for admin sistema, deve ser admin do grupo ou o próprio usuário saindo.
         if (!$isSystemAdmin && !$isGroupAdmin && Auth::id() != $userId) {
             return response()->json(['message' => 'Ação negada.'], 403);
         }
 
-        if ($group->admins()->count() <= 1 && $group->admins()->where('user_id', $userId)->exists()) {
+        // Verifica se o usuário é o último admin antes de permitir a saída/remoção
+        $adminCount = $group->users()->wherePivot('role', 'admin')->count();
+        $isRemovingAdmin = $group->users()->where('user_id', $userId)->wherePivot('role', 'admin')->exists();
+
+        if ($isRemovingAdmin && $adminCount <= 1) {
             return response()->json(['message' => 'O grupo precisa de pelo menos um administrador.'], 422);
         }
 
