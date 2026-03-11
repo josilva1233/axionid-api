@@ -120,7 +120,7 @@ class SocialAuthController extends Controller
             new OA\Response(response: 200, description: 'Perfil finalizado com sucesso')
         ]
     )]
-    public function completeProfile(Request $request)
+public function completeProfile(Request $request)
     {
         $user = $request->user();
 
@@ -134,24 +134,33 @@ class SocialAuthController extends Controller
         ]);
 
         return DB::transaction(function () use ($request, $user) {
-            // ATUALIZAÇÃO: Mudamos para true para gravar 1 no banco de dados
+            
+            // LÓGICA DE DECISÃO:
+            // Se no Request vier 'from_google' como true, mantemos profile_completed como false (0).
+            // Caso contrário (cadastro manual ou outra rota), marcamos como true (1).
+            $isFromGoogle = $request->input('from_google') === 'true' || $request->input('from_google') === true;
+            
             $user->update([
                 'cpf_cnpj'          => $request->cpf_cnpj,
                 'password'          => Hash::make($request->password),
-                'profile_completed' => true, // Aqui ele muda de 0 para 1
-                'from_google'       => true,
+                'profile_completed' => $isFromGoogle ? false : true, // Se for Google, grava 0. Se não, grava 1.
+                'from_google'       => $isFromGoogle,
             ]);
 
-            if ($request->has('zip_code')) {
+            // Só salva endereço se for enviado (como não é o caso do seu form do Google agora, ele pula)
+            if ($request->has('zip_code') && $request->zip_code) {
                 $user->address()->updateOrCreate(
                     ['user_id' => $user->id],
                     $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
                 );
+                
+                // Se ele preencheu o endereço agora, aí sim podemos forçar o completado para true
+                $user->update(['profile_completed' => true]);
             }
 
             return response()->json([
-                'message' => 'Cadastro finalizado com sucesso!',
-                'user'    => $user->fresh()->load('address') // fresh() garante pegar os dados novos
+                'message' => 'Dados atualizados com sucesso!',
+                'user'    => $user->fresh()->load('address')
             ]);
         });
     }
