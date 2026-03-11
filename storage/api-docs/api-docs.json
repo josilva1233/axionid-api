@@ -37,6 +37,11 @@
                                         "type": "string",
                                         "example": "12345678901"
                                     },
+                                    "google_id": {
+                                        "type": "string",
+                                        "example": "123456789kjooojjd01",
+                                        "nullable": true
+                                    },
                                     "password": {
                                         "type": "string",
                                         "example": "senha123"
@@ -141,7 +146,8 @@
                                     },
                                     "complement": {
                                         "type": "string",
-                                        "example": "Apto 1"
+                                        "example": "Apto 1",
+                                        "nullable": true
                                     }
                                 },
                                 "type": "object"
@@ -152,6 +158,9 @@
                 "responses": {
                     "200": {
                         "description": "Perfil completado com sucesso"
+                    },
+                    "422": {
+                        "description": "Erro de validação"
                     }
                 },
                 "security": [
@@ -161,36 +170,184 @@
                 ]
             }
         },
-        "/api/v1/users": {
+        "/api/v1/admin/users": {
             "get": {
                 "tags": [
-                    "Admin"
+                    "Administração"
                 ],
-                "summary": "Listar usuários com filtros",
-                "operationId": "4f45b2ab1c76eafc01bbe68fbb001c4b",
+                "summary": "Listar usuários (Admin)",
+                "operationId": "e049b24c36fe89df3f627835db1fa95b",
+                "responses": {
+                    "200": {
+                        "description": "Lista de usuários paginada"
+                    },
+                    "403": {
+                        "description": "Acesso negado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/admin/users/{id}": {
+            "get": {
+                "tags": [
+                    "Administração"
+                ],
+                "summary": "Exibir detalhes de um usuário (Admin)",
+                "operationId": "051583e634be918581dc7f94fe0c4048",
                 "parameters": [
                     {
-                        "name": "name",
-                        "in": "query",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
                         "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "name": "completed",
-                        "in": "query",
-                        "schema": {
-                            "type": "integer",
-                            "enum": [
-                                0,
-                                1
-                            ]
+                            "type": "integer"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Lista de usuários"
+                        "description": "Dados do usuário"
+                    },
+                    "404": {
+                        "description": "Usuário não encontrado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Administração"
+                ],
+                "summary": "Atualizar usuário e endereço (Admin)",
+                "description": "Permite que um administrador atualize dados do usuário e endereço. Registra quem fez a alteração.",
+                "operationId": "a39b3b8e5c309b279a551c756c3a34a4",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "João Silva Atualizado"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "example": "joao.novo@email.com"
+                                    },
+                                    "zip_code": {
+                                        "type": "string",
+                                        "example": "01001000"
+                                    },
+                                    "street": {
+                                        "type": "string",
+                                        "example": "Nova Rua Exemplo"
+                                    },
+                                    "number": {
+                                        "type": "string",
+                                        "example": "456"
+                                    },
+                                    "neighborhood": {
+                                        "type": "string",
+                                        "example": "Bairro Novo"
+                                    },
+                                    "city": {
+                                        "type": "string",
+                                        "example": "São Paulo"
+                                    },
+                                    "state": {
+                                        "type": "string",
+                                        "example": "SP"
+                                    },
+                                    "complement": {
+                                        "type": "string",
+                                        "example": "Bloco B",
+                                        "nullable": true
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Sucesso",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "admin_info": {
+                                            "properties": {
+                                                "admin_id": {
+                                                    "type": "integer"
+                                                },
+                                                "updated_at": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Acesso negado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Administração"
+                ],
+                "summary": "Deletar usuário (Admin)",
+                "operationId": "b04708b9bd0baa3165dfff0f77dd33f0",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Usuário removido"
+                    },
+                    "404": {
+                        "description": "Usuário não encontrado"
                     }
                 },
                 "security": [
@@ -200,13 +357,83 @@
                 ]
             }
         },
-        "/api/v1/users/{id}/promote": {
+        "/api/v1/admin/audit-logs": {
+            "get": {
+                "tags": [
+                    "Administração"
+                ],
+                "summary": "Ver logs de auditoria (Admin)",
+                "operationId": "1b3a73a24b7dd4f78cbac41999fc2402",
+                "responses": {
+                    "200": {
+                        "description": "Logs de auditoria"
+                    },
+                    "403": {
+                        "description": "Acesso negado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/logout": {
             "post": {
                 "tags": [
-                    "Admin"
+                    "Autenticação"
                 ],
-                "summary": "Promover usuário a Admin",
-                "operationId": "221e2228659b9232adf635e795370e2d",
+                "summary": "Encerrar sessão",
+                "operationId": "aa1d40a69b3a93db8bfcef13f29afa74",
+                "responses": {
+                    "200": {
+                        "description": "Logout realizado com sucesso"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/admin/users/{id}/toggle-status": {
+            "patch": {
+                "tags": [
+                    "Administração"
+                ],
+                "summary": "Ativar/Desativar usuário (Admin)",
+                "operationId": "b501e5c280d2bf33456653cbb04f024a",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status atualizado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/admin/users/{id}/promote": {
+            "post": {
+                "tags": [
+                    "Administração"
+                ],
+                "summary": "Promover a Administrador",
+                "operationId": "bb87fc884ca5dbcdf54eb645bf797608",
                 "parameters": [
                     {
                         "name": "id",
@@ -229,13 +456,13 @@
                 ]
             }
         },
-        "/api/v1/users/{id}/toggle-status": {
-            "patch": {
+        "/api/v1/admin/users/{id}/demote": {
+            "post": {
                 "tags": [
-                    "Admin"
+                    "Administração"
                 ],
-                "summary": "Bloquear/Desbloquear usuário",
-                "operationId": "5616c84daa52fccccc52e7399905b9b8",
+                "summary": "Remover privilégios de Admin",
+                "operationId": "5454ab87a6b203e7eead1b826296b398",
                 "parameters": [
                     {
                         "name": "id",
@@ -248,7 +475,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Status alterado com sucesso"
+                        "description": "Privilégios removidos"
                     }
                 },
                 "security": [
@@ -258,36 +485,108 @@
                 ]
             }
         },
-        "/api/v1/users/{id}/update-manual": {
-            "put": {
+        "/api/v1/groups": {
+            "post": {
                 "tags": [
-                    "Admin"
+                    "Grupos"
                 ],
-                "summary": "Editar usuário manualmente (Admin)",
-                "operationId": "c7a177e37b767a1330353c840fa8eb32",
-                "parameters": [
-                    {
-                        "name": "id",
-                        "in": "path",
-                        "required": true,
-                        "schema": {
-                            "type": "integer"
-                        }
-                    }
-                ],
+                "summary": "Criar novo grupo",
+                "operationId": "8f918bb0bf4de112b42f28d37a44da74",
                 "requestBody": {
+                    "required": true,
                     "content": {
                         "application/json": {
                             "schema": {
                                 "properties": {
                                     "name": {
-                                        "type": "string"
-                                    },
-                                    "email": {
-                                        "type": "string"
-                                    },
-                                    "cpf_cnpj": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "example": "Grupo Financeiro"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Grupo criado com sucesso"
+                    },
+                    "422": {
+                        "description": "Erro de validação"
+                    },
+                    "401": {
+                        "description": "Não autenticado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/groups/{id}": {
+            "get": {
+                "tags": [
+                    "Grupos"
+                ],
+                "summary": "Exibir detalhes do grupo",
+                "operationId": "04bb15211c2de13d12026125b3be3a3c",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Dados do grupo e membros"
+                    },
+                    "403": {
+                        "description": "Acesso negado"
+                    },
+                    "404": {
+                        "description": "Grupo não encontrado"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/groups/{group_id}/members": {
+            "post": {
+                "tags": [
+                    "Grupos"
+                ],
+                "summary": "Adicionar membro ao grupo",
+                "operationId": "8be4bc0531108863994b7465e2957c34",
+                "parameters": [
+                    {
+                        "name": "group_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "user_id": {
+                                        "type": "integer",
+                                        "example": 5
                                     }
                                 },
                                 "type": "object"
@@ -297,7 +596,13 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Usuário atualizado"
+                        "description": "Membro adicionado com sucesso"
+                    },
+                    "403": {
+                        "description": "Apenas administradores do grupo podem convidar"
+                    },
+                    "422": {
+                        "description": "Erro de validação ou usuário já no grupo"
                     }
                 },
                 "security": [
@@ -307,34 +612,37 @@
                 ]
             }
         },
-        "/api/v1/audit-logs": {
-            "get": {
+        "/api/v1/groups/{group_id}/members/{user_id}/promote": {
+            "patch": {
                 "tags": [
-                    "Admin"
+                    "Grupos"
                 ],
-                "summary": "Visualizar logs de auditoria",
-                "operationId": "015d022f2bc5735acf3ac73247a6e785",
+                "summary": "Promover membro a Admin do grupo",
+                "operationId": "c090fa6bcbc75bb3060dc8dbacd7ab5e",
                 "parameters": [
                     {
-                        "name": "method",
-                        "in": "query",
+                        "name": "group_id",
+                        "in": "path",
+                        "required": true,
                         "schema": {
-                            "type": "string",
-                            "example": "POST"
+                            "type": "integer"
                         }
                     },
                     {
-                        "name": "date",
-                        "in": "query",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true,
                         "schema": {
-                            "type": "string",
-                            "format": "date"
+                            "type": "integer"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Logs retornados"
+                        "description": "Membro promovido com sucesso"
+                    },
+                    "403": {
+                        "description": "Ação negada"
                     }
                 },
                 "security": [
@@ -344,16 +652,37 @@
                 ]
             }
         },
-        "/api/v1/logout": {
-            "post": {
+        "/api/v1/groups/{group_id}/members/{user_id}": {
+            "delete": {
                 "tags": [
-                    "Autenticação"
+                    "Grupos"
                 ],
-                "summary": "Logout",
-                "operationId": "aa1d40a69b3a93db8bfcef13f29afa74",
+                "summary": "Remover membro ou sair do grupo",
+                "operationId": "2e38f59d25b22ad0770afaabe4b80be6",
+                "parameters": [
+                    {
+                        "name": "group_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "Sessão encerrada"
+                        "description": "Removido com sucesso"
+                    },
+                    "422": {
+                        "description": "O grupo precisa de pelo menos um administrador"
                     }
                 },
                 "security": [
@@ -363,13 +692,14 @@
                 ]
             }
         },
-        "/api/v1/forgot-password": {
+        "/api/v1/password/send-link": {
             "post": {
                 "tags": [
                     "Recuperação de Senha"
                 ],
                 "summary": "1. Solicitar código de recuperação",
-                "operationId": "727cb7858ffeb4e102be8ab66681e1b4",
+                "description": "Envia um código alfanumérico de 6 dígitos para o e-mail do usuário se ele existir no sistema.",
+                "operationId": "05cf999d654365fd9ba3dea13d0cd829",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -378,7 +708,8 @@
                                 "properties": {
                                     "email": {
                                         "type": "string",
-                                        "example": "josilva1233@gmail.com"
+                                        "format": "email",
+                                        "example": "usuario@email.com"
                                     }
                                 },
                                 "type": "object"
@@ -388,18 +719,25 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Código enviado"
+                        "description": "Código enviado com sucesso"
+                    },
+                    "404": {
+                        "description": "Usuário não encontrado"
+                    },
+                    "500": {
+                        "description": "Erro ao enviar e-mail"
                     }
                 }
             }
         },
-        "/api/v1/verify-code": {
+        "/api/v1/password/verify-code": {
             "post": {
                 "tags": [
                     "Recuperação de Senha"
                 ],
-                "summary": "2. Validar código recebido",
-                "operationId": "fffb18746ad52ddb67dd0ef49a72b999",
+                "summary": "2. Verificar validade do código",
+                "description": "Valida se o código de 6 dígitos informado ainda é válido e não expirou (limite de 60 min).",
+                "operationId": "f85fa19e5ca3ac5b91d380d012486c54",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -408,11 +746,12 @@
                                 "properties": {
                                     "email": {
                                         "type": "string",
-                                        "example": "josilva1233@gmail.com"
+                                        "format": "email",
+                                        "example": "usuario@email.com"
                                     },
                                     "token": {
                                         "type": "string",
-                                        "example": "ABC123"
+                                        "example": "A1B2C3"
                                     }
                                 },
                                 "type": "object"
@@ -422,18 +761,22 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Código válido"
+                        "description": "Código validado com sucesso"
+                    },
+                    "422": {
+                        "description": "Código inválido ou expirado"
                     }
                 }
             }
         },
-        "/api/v1/reset-password": {
+        "/api/v1/password/reset": {
             "post": {
                 "tags": [
                     "Recuperação de Senha"
                 ],
-                "summary": "3. Definir nova senha",
-                "operationId": "10071ce688d34466c60a6ba60a654cf4",
+                "summary": "3. Redefinir senha final",
+                "description": "Altera a senha do usuário após a validação bem-sucedida do token.",
+                "operationId": "40df240eb242bd65312739272060ff35",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -442,11 +785,12 @@
                                 "properties": {
                                     "email": {
                                         "type": "string",
-                                        "example": "josilva1233@gmail.com"
+                                        "format": "email",
+                                        "example": "usuario@email.com"
                                     },
                                     "token": {
                                         "type": "string",
-                                        "example": "ABC123"
+                                        "example": "A1B2C3"
                                     },
                                     "password": {
                                         "type": "string",
@@ -466,23 +810,37 @@
                     "200": {
                         "description": "Senha alterada com sucesso"
                     },
+                    "404": {
+                        "description": "Usuário não encontrado"
+                    },
                     "422": {
-                        "description": "Erro de validação"
+                        "description": "Token inválido/expirado ou erro de confirmação de senha"
                     }
                 }
             }
         },
-        "/api/v1/auth/google": {
+        "/api/v1/auth/google/redirect": {
             "get": {
                 "tags": [
                     "Autenticação Social"
                 ],
-                "summary": "Redirecionar para login do Google",
-                "description": "Envia o usuário para a tela de autenticação oficial do Google.",
-                "operationId": "c3bbf3810ac27e0b3231bc36a82da1ad",
+                "summary": "1. Redirecionar para o Google",
+                "description": "Inicia o fluxo OAuth2. O parâmetro \"origin\" define para onde o usuário volta após o login.",
+                "operationId": "a51a5551cae84b7638f0c55cedac39f2",
+                "parameters": [
+                    {
+                        "name": "origin",
+                        "in": "query",
+                        "description": "URL do frontend (ex: http://localhost:3000)",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
                 "responses": {
                     "302": {
-                        "description": "Redirecionamento para o Google"
+                        "description": "Redirecionamento para a conta Google"
                     }
                 }
             }
@@ -492,34 +850,92 @@
                 "tags": [
                     "Autenticação Social"
                 ],
-                "summary": "Callback da autenticação Google",
-                "description": "Endpoint que recebe os dados do Google e gera o token de acesso da AxionID.",
+                "summary": "2. Callback do Google",
+                "description": "Endpoint processado pelo Google. Faz o login ou pré-cadastro e redireciona o navegador de volta para o frontend.",
                 "operationId": "c43b2144e39b2ce965521b988418dabe",
                 "responses": {
-                    "200": {
-                        "description": "Login realizado com sucesso",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "properties": {
-                                        "message": {
-                                            "type": "string",
-                                            "example": "Login via Google realizado!"
-                                        },
-                                        "token": {
-                                            "type": "string",
-                                            "example": "39|vmmXWH..."
-                                        },
-                                        "user": {
-                                            "type": "object"
-                                        }
+                    "302": {
+                        "description": "Redireciona para /register (se novo) ou /login (se existente)"
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/google/complete-profile": {
+            "post": {
+                "tags": [
+                    "Autenticação Social"
+                ],
+                "summary": "3. Finalizar cadastro (Google)",
+                "description": "Após o retorno do Google, o usuário deve definir CPF, Senha e Endereço para ativar a conta.",
+                "operationId": "df4c2d471d61d81f7f9fdbc87ea3fc44",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "properties": {
+                                    "cpf_cnpj": {
+                                        "type": "string",
+                                        "example": "12345678901"
                                     },
-                                    "type": "object"
-                                }
+                                    "password": {
+                                        "type": "string",
+                                        "example": "nova_senha123"
+                                    },
+                                    "password_confirmation": {
+                                        "type": "string",
+                                        "example": "nova_senha123"
+                                    },
+                                    "zip_code": {
+                                        "type": "string",
+                                        "example": "01001000"
+                                    },
+                                    "street": {
+                                        "type": "string",
+                                        "example": "Rua Exemplo"
+                                    },
+                                    "number": {
+                                        "type": "string",
+                                        "example": "10"
+                                    },
+                                    "neighborhood": {
+                                        "type": "string",
+                                        "example": "Centro"
+                                    },
+                                    "city": {
+                                        "type": "string",
+                                        "example": "São Paulo"
+                                    },
+                                    "state": {
+                                        "type": "string",
+                                        "example": "SP"
+                                    },
+                                    "complement": {
+                                        "type": "string",
+                                        "example": "Apto 101"
+                                    }
+                                },
+                                "type": "object"
                             }
                         }
                     }
-                }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Perfil finalizado com sucesso"
+                    },
+                    "401": {
+                        "description": "Não autorizado"
+                    },
+                    "422": {
+                        "description": "Erro de validação ou CPF já em uso"
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
             }
         },
         "/": {
@@ -549,6 +965,10 @@
     },
     "tags": [
         {
+            "name": "Grupos",
+            "description": "Gerenciamento de grupos e membros"
+        },
+        {
             "name": "Autenticação",
             "description": "Autenticação"
         },
@@ -557,8 +977,8 @@
             "description": "Perfil"
         },
         {
-            "name": "Admin",
-            "description": "Admin"
+            "name": "Administração",
+            "description": "Administração"
         },
         {
             "name": "Recuperação de Senha",
