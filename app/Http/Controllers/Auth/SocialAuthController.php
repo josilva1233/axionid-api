@@ -8,7 +8,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
 use Laravel\Socialite\Facades\Socialite;
 use OpenApi\Attributes as OA;
 
@@ -45,10 +44,9 @@ class SocialAuthController extends Controller
     #[OA\Get(
         path: '/api/v1/auth/google/callback',
         summary: '2. Callback do Google',
-        description: 'Endpoint processado pelo Google. Faz o login ou pré-cadastro e redireciona o navegador de volta para o frontend.',
         tags: ['Autenticação Social'],
         responses: [
-            new OA\Response(response: 302, description: 'Redireciona para /register (se novo) ou /login (se existente)')
+            new OA\Response(response: 302, description: 'Redireciona para /register ou /login')
         ]
     )]
     public function handleGoogleCallback(Request $request)
@@ -64,7 +62,6 @@ class SocialAuthController extends Controller
                 $state = $request->input('state');
                 parse_str($state, $result);
                 $frontendUrl = rtrim($result['origin'] ?? config('app.frontend_url'), '/');
-
                 return redirect("{$frontendUrl}/login?error=account_suspended");
             }
             
@@ -75,14 +72,13 @@ class SocialAuthController extends Controller
                     'google_id'         => $googleUser->id,
                     'password'          => Hash::make(Str::random(24)),
                     'from_google'       => true,
-                    'profile_completed' => false,
+                    'profile_completed' => false, // No primeiro acesso via Google, inicia como 0
                 ]);
             } else {
                 $user->update(['google_id' => $googleUser->id]);
             }
 
             $token = $user->createToken('axion_token')->plainTextToken;
-
             $state = $request->input('state');
             parse_str($state, $result);
             $frontendUrl = rtrim($result['origin'] ?? config('app.frontend_url'), '/');
@@ -108,23 +104,20 @@ class SocialAuthController extends Controller
     #[OA\Post(
         path: '/api/v1/auth/google/complete-profile',
         summary: '3. Finalizar cadastro (Google)',
-        description: 'Após o retorno do Google, o usuário deve definir CPF, Senha e Endereço para ativar a conta.',
         tags: ['Autenticação Social'],
         security: [['sanctum' => []]],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
                 properties: [
-                    new OA\Property(property: 'cpf_cnpj', type: 'string', example: '12345678901'),
-                    new OA\Property(property: 'password', type: 'string', example: 'nova_senha123'),
-                    new OA\Property(property: 'password_confirmation', type: 'string', example: 'nova_senha123')
+                    new OA\Property(property: 'cpf_cnpj', type: 'string'),
+                    new OA\Property(property: 'password', type: 'string'),
+                    new OA\Property(property: 'password_confirmation', type: 'string')
                 ]
             )
         ),
         responses: [
-            new OA\Response(response: 200, description: 'Perfil finalizado com sucesso'),
-            new OA\Response(response: 401, description: 'Não autorizado'),
-            new OA\Response(response: 422, description: 'Erro de validação ou CPF já em uso')
+            new OA\Response(response: 200, description: 'Perfil finalizado com sucesso')
         ]
     )]
     public function completeProfile(Request $request)
@@ -135,20 +128,20 @@ class SocialAuthController extends Controller
             return response()->json(['message' => 'Não autorizado.'], 401);
         }
 
-        // REMOVIDO 'required' dos campos de endereço para não travar o registro inicial
         $request->validate([
             'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
             'password' => 'required|min:6|confirmed',
         ]);
 
         return DB::transaction(function () use ($request, $user) {
+            // ATUALIZAÇÃO: Mudamos para true para gravar 1 no banco de dados
             $user->update([
                 'cpf_cnpj'          => $request->cpf_cnpj,
                 'password'          => Hash::make($request->password),
-                'profile_completed' => false,
+                'profile_completed' => true, // Aqui ele muda de 0 para 1
+                'from_google'       => true,
             ]);
 
-            // Só tenta salvar o endereço se algum dado de endereço for enviado
             if ($request->has('zip_code')) {
                 $user->address()->updateOrCreate(
                     ['user_id' => $user->id],
@@ -158,7 +151,7 @@ class SocialAuthController extends Controller
 
             return response()->json([
                 'message' => 'Cadastro finalizado com sucesso!',
-                'user'    => $user->load('address')
+                'user'    => $user->fresh()->load('address') // fresh() garante pegar os dados novos
             ]);
         });
     }
