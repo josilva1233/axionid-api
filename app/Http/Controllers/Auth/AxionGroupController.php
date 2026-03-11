@@ -28,15 +28,22 @@ public function index(Request $request)
 {
     $user = Auth::user();
 
+    // 1. Definimos a query base com os relacionamentos necessários
+    // O users:id,name garante que tragamos os dados para a contagem e o pivô
+    $query = Group::with(['creator', 'users' => function($q) {
+        $q->select('users.id', 'users.name', 'users.email'); // Seleciona campos básicos
+    }]);
+
     if ($user->is_admin) {
-        $groups = Group::with(['creator', 'users'])->paginate(15);
+        // Se for admin global, traz tudo
+        $groups = $query->paginate(15);
     } else {
-        // Traz grupos onde ele é o criador OU onde ele está na tabela pivô de membros
-        $groups = Group::where('creator_id', $user->id)
-            ->orWhereHas('users', function($query) use ($user) {
-                $query->where('user_id', $user->id);
+        // Se for usuário comum, aplica o filtro de Criador OU Membro
+        $groups = $query->where('creator_id', $user->id)
+            ->orWhereHas('users', function ($q) use ($user) {
+                // Importante: use 'group_user.user_id' para evitar erro de SQL
+                $q->where('group_user.user_id', $user->id);
             })
-            ->with(['creator', 'users'])
             ->paginate(15);
     }
 
