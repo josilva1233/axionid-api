@@ -24,22 +24,24 @@ class AxionGroupController extends Controller
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
-    public function index(Request $request)
-    {
-        $user = Auth::user();
+public function index(Request $request)
+{
+    $user = Auth::user();
 
-        // Se for Super Admin do sistema, traz todos os grupos do banco
-        if ($user->is_admin) {
-            $groups = Group::with(['creator', 'users'])->paginate(15);
-        } else {
-            // Se for usuário comum, traz apenas os grupos criados por ele
-            $groups = Group::where('creator_id', $user->id)
-                ->with(['creator', 'users'])
-                ->paginate(15);
-        }
-
-        return response()->json($groups);
+    if ($user->is_admin) {
+        $groups = Group::with(['creator', 'users'])->paginate(15);
+    } else {
+        // Traz grupos onde ele é o criador OU onde ele está na tabela pivô de membros
+        $groups = Group::where('creator_id', $user->id)
+            ->orWhereHas('users', function($query) use ($user) {
+                $query->where('user_id', $user->id);
+            })
+            ->with(['creator', 'users'])
+            ->paginate(15);
     }
+
+    return response()->json($groups);
+}
 
     #[OA\Post(
         path: '/api/v1/groups',
