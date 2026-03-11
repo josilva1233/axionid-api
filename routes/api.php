@@ -45,13 +45,15 @@ Route::prefix('v1')->group(function () {
     
     // Rotas Protegidas (Logados)
     Route::middleware('auth:sanctum')->group(function () {
+        
         Route::post('/logout', [AxionAuthController::class, 'logout']);
         Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']); 
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
         Route::get('/me', function (Request $request) {
             return $request->user()->load('address');
         });
-
+        // rota de buscar usuário por email (para o frontend verificar se o email já existe antes de registrar):
+        Route::get('/users/find-by-email/{email}', [AxionAuthController::class, 'findByEmail']);
         // --- Módulo de Grupos (Usuários comuns e Admins de Grupo) ---
         Route::prefix('groups')->group(function () {
             Route::get('/', [AxionGroupController::class, 'index']);

@@ -164,4 +164,19 @@ public function completeProfile(Request $request)
             ]);
         });
     }
+public function findByEmail($email)
+{
+    $user = \App\Models\User::where('email', $email)->first();
+
+    if (!$user) {
+        return response()->json(['message' => 'Usuário não encontrado'], 404);
+    }
+
+    // Retorna apenas o ID e Nome para segurança
+    return response()->json([
+        'id' => $user->id,
+        'name' => $user->name,
+        'email' => $user->email
+    ]);
+}
 }
