@@ -3,7 +3,7 @@
 use App\Http\Controllers\Auth\AxionAuthController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\SocialAuthController;
-use App\Http\Controllers\AxionGroupController; // Importe o novo controller
+use App\Http\Controllers\Auth\AxionGroupController; // Importação adicionada
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +30,7 @@ Route::get('/health', function() {
 
 Route::prefix('v1')->group(function () {
     
-    // Autenticação
+    // Autenticação Pública
     Route::post('/register', [AxionAuthController::class, 'register']);
     Route::post('/login', [AxionAuthController::class, 'login']);
 
@@ -43,35 +43,37 @@ Route::prefix('v1')->group(function () {
     Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
     Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
     
-    // Rotas Protegidas
+    // Rotas Protegidas (Logados)
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AxionAuthController::class, 'logout']);
-        Route::post('/users/{id}/remove-admin', [AxionAuthController::class, 'removeAdmin']);
         Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']); 
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 
-        Route::get('/users/{id}', [AxionAuthController::class, 'show']);
         Route::get('/me', function (Request $request) {
             return $request->user()->load('address');
         });
 
-        // --- GESTÃO DE GRUPOS (Usuários Comuns e Admins de Grupo) ---
+        // --- Módulo de Grupos (Usuários comuns e Admins de Grupo) ---
         Route::prefix('groups')->group(function () {
-            Route::post('/', [AxionGroupController::class, 'store']);                // Criar grupo
-            Route::get('/{id}', [AxionGroupController::class, 'show']);              // Tela do grupo
-            Route::post('/{group_id}/members', [AxionGroupController::class, 'addMember']); // Adicionar membro
-            Route::patch('/{group_id}/members/{user_id}/promote', [AxionGroupController::class, 'promoteMember']); // Promover a admin do grupo
-            Route::delete('/{group_id}/members/{user_id}', [AxionGroupController::class, 'removeMember']); // Remover membro/admin do grupo
+            Route::post('/', [AxionGroupController::class, 'store']);             // Criar Grupo
+            Route::get('/{id}', [AxionGroupController::class, 'show']);           // Ver detalhes
+            Route::post('/{group_id}/members', [AxionGroupController::class, 'addMember']); // Convidar
+            Route::patch('/{group_id}/members/{user_id}/promote', [AxionGroupController::class, 'promoteMember']); // Promover a Admin de Grupo
+            Route::delete('/{group_id}/members/{user_id}', [AxionGroupController::class, 'removeMember']); // Remover/Sair
         });
 
-        // Rotas exclusivas de Admin do Sistema
+        // --- Módulo Administrativo (Apenas Super Admin) ---
         Route::middleware('admin')->group(function () {
             Route::get('/users', [AxionAuthController::class, 'index']);
+            Route::get('/users/{id}', [AxionAuthController::class, 'show']);
             Route::post('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
+            Route::post('/users/{id}/remove-admin', [AxionAuthController::class, 'removeAdmin']);
             Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
             Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
             Route::get('/audit-logs', [AxionAuthController::class, 'auditLogs']);
-            Route::put('/users/{id}', [AxionAuthController::class, 'adminUpdateUser']);
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
+
+            // Nova rota: Super Admin vendo todos os grupos do sistema
+            Route::get('/admin/groups', [AxionGroupController::class, 'index']);
         });
     });
 });
