@@ -251,4 +251,35 @@ public function index(Request $request)
 
         return response()->json(['message' => 'Membro removido com sucesso.']);
     }
+
+    #[OA\Delete(
+        path: '/api/v1/groups/{id}',
+        summary: 'Excluir grupo permanentemente',
+        tags: ['Grupos'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Grupo excluído com sucesso'),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 404, description: 'Grupo não encontrado')
+        ]
+    )]
+    public function destroy($id)
+    {
+        $group = Group::findOrFail($id);
+        $user = Auth::user();
+
+        // Só o Admin Global ou o Criador do grupo podem deletar
+        if (!$user->is_admin && $group->creator_id !== $user->id) {
+            return response()->json(['message' => 'Você não tem permissão para excluir este grupo.'], 403);
+        }
+
+        // Remove todos os membros antes de deletar o grupo (opcional, dependendo da sua FK)
+        $group->users()->detach();
+        $group->delete();
+
+        return response()->json(['message' => 'Grupo excluído permanentemente.']);
+    }
 }

@@ -59,6 +59,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/', [AxionGroupController::class, 'index']);
             Route::post('/', [AxionGroupController::class, 'store']);             // Criar Grupo
             Route::get('/{id}', [AxionGroupController::class, 'show']);           // Ver detalhes
+            Route::delete('/{id}', [AxionGroupController::class, 'destroy']);
             Route::post('/{group_id}/members', [AxionGroupController::class, 'addMember']); // Convidar
             Route::patch('/{group_id}/members/{user_id}/promote', [AxionGroupController::class, 'promoteMember']); // Promover a Admin de Grupo
             Route::delete('/{group_id}/members/{user_id}', [AxionGroupController::class, 'removeMember']); // Remover/Sair
