@@ -54,6 +54,7 @@ Route::prefix('v1')->group(function () {
 
         // --- Módulo de Grupos (Usuários comuns e Admins de Grupo) ---
         Route::prefix('groups')->group(function () {
+            Route::get('/', [AxionGroupController::class, 'index']);
             Route::post('/', [AxionGroupController::class, 'store']);             // Criar Grupo
             Route::get('/{id}', [AxionGroupController::class, 'show']);           // Ver detalhes
             Route::post('/{group_id}/members', [AxionGroupController::class, 'addMember']); // Convidar
