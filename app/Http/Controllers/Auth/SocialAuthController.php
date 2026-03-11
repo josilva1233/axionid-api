@@ -145,7 +145,7 @@ class SocialAuthController extends Controller
             $user->update([
                 'cpf_cnpj'          => $request->cpf_cnpj,
                 'password'          => Hash::make($request->password),
-                'profile_completed' => true,
+                'profile_completed' => false,
             ]);
 
             // Só tenta salvar o endereço se algum dado de endereço for enviado
