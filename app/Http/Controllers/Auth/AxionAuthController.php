@@ -414,4 +414,20 @@ class AxionAuthController extends Controller
         $user->update(['is_admin' => false]);
         return response()->json(['message' => 'Privilégios removidos com sucesso.']);
     }
+    public function findByEmail($email)
+    {
+        // O e-mail vem da URL
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'E-mail não encontrado no sistema.'], 404);
+        }
+
+        // Retornamos apenas o ID e o Nome para o Front-end
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email
+        ]);
+    }
 }
