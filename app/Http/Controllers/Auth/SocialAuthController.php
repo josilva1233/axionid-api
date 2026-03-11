@@ -117,14 +117,7 @@ class SocialAuthController extends Controller
                 properties: [
                     new OA\Property(property: 'cpf_cnpj', type: 'string', example: '12345678901'),
                     new OA\Property(property: 'password', type: 'string', example: 'nova_senha123'),
-                    new OA\Property(property: 'password_confirmation', type: 'string', example: 'nova_senha123'),
-                    new OA\Property(property: 'zip_code', type: 'string', example: '01001000'),
-                    new OA\Property(property: 'street', type: 'string', example: 'Rua Exemplo'),
-                    new OA\Property(property: 'number', type: 'string', example: '10'),
-                    new OA\Property(property: 'neighborhood', type: 'string', example: 'Centro'),
-                    new OA\Property(property: 'city', type: 'string', example: 'São Paulo'),
-                    new OA\Property(property: 'state', type: 'string', example: 'SP'),
-                    new OA\Property(property: 'complement', type: 'string', example: 'Apto 101')
+                    new OA\Property(property: 'password_confirmation', type: 'string', example: 'nova_senha123')
                 ]
             )
         ),
@@ -142,16 +135,10 @@ class SocialAuthController extends Controller
             return response()->json(['message' => 'Não autorizado.'], 401);
         }
 
-        // Validação incluindo campos obrigatórios de endereço para evitar erro 1364 do MySQL
+        // REMOVIDO 'required' dos campos de endereço para não travar o registro inicial
         $request->validate([
-            'cpf_cnpj'     => 'required|string|unique:users,cpf_cnpj,' . $user->id,
-            'password'     => 'required|min:6|confirmed',
-            'zip_code'     => 'required|string',
-            'street'       => 'required|string',
-            'number'       => 'required|string',
-            'neighborhood' => 'required|string',
-            'city'         => 'required|string',
-            'state'        => 'required|string|size:2',
+            'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
+            'password' => 'required|min:6|confirmed',
         ]);
 
         return DB::transaction(function () use ($request, $user) {
@@ -161,10 +148,13 @@ class SocialAuthController extends Controller
                 'profile_completed' => true,
             ]);
 
-            $user->address()->updateOrCreate(
-                ['user_id' => $user->id],
-                $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
-            );       
+            // Só tenta salvar o endereço se algum dado de endereço for enviado
+            if ($request->has('zip_code')) {
+                $user->address()->updateOrCreate(
+                    ['user_id' => $user->id],
+                    $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
+                );
+            }
 
             return response()->json([
                 'message' => 'Cadastro finalizado com sucesso!',
