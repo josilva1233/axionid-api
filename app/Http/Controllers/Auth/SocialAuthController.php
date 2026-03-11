@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Laravel\Socialite\Facades\Socialite;
 use OpenApi\Attributes as OA;
 
@@ -32,7 +34,6 @@ class SocialAuthController extends Controller
     )]
     public function redirectToGoogle(Request $request)
     {
-        // Usa config() em vez de env() para evitar erros de cache
         $origin = $request->query('origin', config('app.frontend_url'));
         
         return Socialite::driver('google')
@@ -55,7 +56,6 @@ class SocialAuthController extends Controller
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
             
-            // Busca usuário existente ou prepara criação
             $user = User::where('google_id', $googleUser->id)
                         ->orWhere('email', $googleUser->email)
                         ->first();
@@ -65,33 +65,28 @@ class SocialAuthController extends Controller
                 parse_str($state, $result);
                 $frontendUrl = rtrim($result['origin'] ?? config('app.frontend_url'), '/');
 
-                // Redireciona com um parâmetro de erro específico
                 return redirect("{$frontendUrl}/login?error=account_suspended");
             }
             
             if (!$user) {
-                // PRIMEIRO GRAVAÇÃO: Apenas dados básicos do Google
                 $user = User::create([
                     'name'              => $googleUser->name,
                     'email'             => $googleUser->email,
                     'google_id'         => $googleUser->id,
-                    'password'          => Hash::make(Str::random(24)), // Senha provisória
+                    'password'          => Hash::make(Str::random(24)),
                     'from_google'       => true,
                     'profile_completed' => false,
                 ]);
             } else {
-                // Atualiza o ID do Google caso tenha entrado por e-mail antes
                 $user->update(['google_id' => $googleUser->id]);
             }
 
-            // Gera o Token para o usuário poder chamar o 'completeProfile'
             $token = $user->createToken('axion_token')->plainTextToken;
 
             $state = $request->input('state');
             parse_str($state, $result);
             $frontendUrl = rtrim($result['origin'] ?? config('app.frontend_url'), '/');
 
-            // SE NÃO TEM CPF: Redireciona para completar (Step 2)
             if (empty($user->cpf_cnpj)) {
                 $params = http_build_query([
                     'token'       => $token,
@@ -103,7 +98,6 @@ class SocialAuthController extends Controller
                 return redirect("{$frontendUrl}/register?{$params}");
             }
 
-            // SE JÁ TEM CPF: Vai direto para o Dashboard
             return redirect("{$frontendUrl}/login?token={$token}");
 
         } catch (\Exception $e) {
@@ -148,26 +142,34 @@ class SocialAuthController extends Controller
             return response()->json(['message' => 'Não autorizado.'], 401);
         }
 
+        // Validação incluindo campos obrigatórios de endereço para evitar erro 1364 do MySQL
         $request->validate([
-            'cpf_cnpj' => 'required|string|unique:users,cpf_cnpj,' . $user->id,
-            'password' => 'required|min:6|confirmed',
+            'cpf_cnpj'     => 'required|string|unique:users,cpf_cnpj,' . $user->id,
+            'password'     => 'required|min:6|confirmed',
+            'zip_code'     => 'required|string',
+            'street'       => 'required|string',
+            'number'       => 'required|string',
+            'neighborhood' => 'required|string',
+            'city'         => 'required|string',
+            'state'        => 'required|string|size:2',
         ]);
 
-        $user->update([
-            'cpf_cnpj'          => $request->cpf_cnpj,
-            'password'          => Hash::make($request->password),
-            'profile_completed' => true,
-        ]);
+        return DB::transaction(function () use ($request, $user) {
+            $user->update([
+                'cpf_cnpj'          => $request->cpf_cnpj,
+                'password'          => Hash::make($request->password),
+                'profile_completed' => true,
+            ]);
 
-        // 3. SALVAR O ENDEREÇO
-        $user->address()->updateOrCreate(
-            ['user_id' => $user->id],
-            $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
-        );       
+            $user->address()->updateOrCreate(
+                ['user_id' => $user->id],
+                $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
+            );       
 
-        return response()->json([
-            'message' => 'Cadastro finalizado com sucesso!',
-            'user'    => $user->load('address')
-        ]);
+            return response()->json([
+                'message' => 'Cadastro finalizado com sucesso!',
+                'user'    => $user->load('address')
+            ]);
+        });
     }
 }
