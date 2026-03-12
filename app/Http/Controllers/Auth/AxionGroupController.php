@@ -24,31 +24,29 @@ class AxionGroupController extends Controller
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
-public function index(Request $request)
-{
-    $user = Auth::user();
+    public function index(Request $request)
+    {
+        $user = Auth::user();
 
-    // 1. Definimos a query base com os relacionamentos necessários
-    // O users:id,name garante que tragamos os dados para a contagem e o pivô
-    $query = Group::with(['creator', 'users' => function($q) {
-        $q->select('users.id', 'users.name', 'users.email'); // Seleciona campos básicos
-    }]);
+        // 1. Definimos a query base com os relacionamentos necessários
+        $query = Group::with(['creator', 'users' => function($q) {
+            $q->select('users.id', 'users.name', 'users.email'); 
+        }]);
 
-    if ($user->is_admin) {
-        // Se for admin global, traz tudo
-        $groups = $query->paginate(15);
-    } else {
-        // Se for usuário comum, aplica o filtro de Criador OU Membro
-        $groups = $query->where('creator_id', $user->id)
-            ->orWhereHas('users', function ($q) use ($user) {
-                // Importante: use 'group_user.user_id' para evitar erro de SQL
-                $q->where('group_user.user_id', $user->id);
-            })
-            ->paginate(15);
+        if ($user->is_admin) {
+            // Se for admin global, traz tudo
+            $groups = $query->paginate(15);
+        } else {
+            // Se for usuário comum, aplica o filtro de Criador OU Membro
+            $groups = $query->where('creator_id', $user->id)
+                ->orWhereHas('users', function ($q) use ($user) {
+                    $q->where('group_user.user_id', $user->id);
+                })
+                ->paginate(15);
+        }
+
+        return response()->json($groups);
     }
-
-    return response()->json($groups);
-}
 
     #[OA\Post(
         path: '/api/v1/groups',
@@ -114,7 +112,6 @@ public function index(Request $request)
             return response()->json(['message' => 'Grupo não encontrado.'], 404);
         }
 
-        // Lógica de acesso: Se for Admin do sistema OU estiver no grupo
         $isSystemAdmin = Auth::user()->is_admin;
         $isMember = $group->users->contains(Auth::id());
 
@@ -126,12 +123,12 @@ public function index(Request $request)
     }
 
     #[OA\Post(
-        path: '/api/v1/groups/{group_id}/members',
+        path: '/api/v1/groups/{id}/members',
         summary: 'Adicionar membro ao grupo',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(name: 'group_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         requestBody: new OA\RequestBody(
             required: true,
@@ -143,8 +140,8 @@ public function index(Request $request)
         ),
         responses: [
             new OA\Response(response: 200, description: 'Membro adicionado com sucesso'),
-            new OA\Response(response: 403, description: 'Apenas administradores podem convidar'),
-            new OA\Response(response: 422, description: 'Erro de validação')
+            new OA\Response(response: 403, description: 'Acesso negado: Requer ser Admin do Grupo ou Admin Global'),
+            new OA\Response(response: 422, description: 'Erro de validação ou usuário já existente')
         ]
     )]
     public function addMember(Request $request, $groupId)
@@ -179,17 +176,17 @@ public function index(Request $request)
     }
 
     #[OA\Patch(
-        path: '/api/v1/groups/{group_id}/members/{user_id}/promote',
+        path: '/api/v1/groups/{id}/members/{user_id}/promote',
         summary: 'Promover membro a Admin do grupo',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(name: 'group_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
             new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
             new OA\Response(response: 200, description: 'Membro promovido com sucesso'),
-            new OA\Response(response: 403, description: 'Ação negada')
+            new OA\Response(response: 403, description: 'Ação negada: Requer privilégios administrativos')
         ]
     )]
     public function promoteMember($groupId, $userId)
@@ -212,17 +209,18 @@ public function index(Request $request)
     }
 
     #[OA\Delete(
-        path: '/api/v1/groups/{group_id}/members/{user_id}',
+        path: '/api/v1/groups/{id}/members/{user_id}',
         summary: 'Remover membro ou sair do grupo',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(name: 'group_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
             new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
             new OA\Response(response: 200, description: 'Removido com sucesso'),
-            new OA\Response(response: 422, description: 'O grupo precisa de pelo menos um administrador')
+            new OA\Response(response: 422, description: 'O grupo precisa de pelo menos um administrador'),
+            new OA\Response(response: 403, description: 'Sem permissão para remover este usuário')
         ]
     )]
     public function removeMember($groupId, $userId)
@@ -239,7 +237,6 @@ public function index(Request $request)
             return response()->json(['message' => 'Ação negada.'], 403);
         }
 
-        // Verifica se o usuário é o último admin antes de permitir a saída/remoção
         $adminCount = $group->users()->wherePivot('role', 'admin')->count();
         $isRemovingAdmin = $group->users()->where('user_id', $userId)->wherePivot('role', 'admin')->exists();
 
@@ -262,7 +259,7 @@ public function index(Request $request)
         ],
         responses: [
             new OA\Response(response: 200, description: 'Grupo excluído com sucesso'),
-            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 403, description: 'Acesso negado: Requer ser Criador ou Admin Global'),
             new OA\Response(response: 404, description: 'Grupo não encontrado')
         ]
     )]
@@ -271,12 +268,10 @@ public function index(Request $request)
         $group = Group::findOrFail($id);
         $user = Auth::user();
 
-        // Só o Admin Global ou o Criador do grupo podem deletar
         if (!$user->is_admin && $group->creator_id !== $user->id) {
             return response()->json(['message' => 'Você não tem permissão para excluir este grupo.'], 403);
         }
 
-        // Remove todos os membros antes de deletar o grupo (opcional, dependendo da sua FK)
         $group->users()->detach();
         $group->delete();
 
