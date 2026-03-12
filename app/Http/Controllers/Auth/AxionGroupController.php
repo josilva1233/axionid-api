@@ -75,7 +75,7 @@ class AxionGroupController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'message' => 'Erro de validação',
+                'message' => 'Esse nome de grupo já está em uso. Por favor, escolha outro.',
                 'errors' => $validator->errors()
             ], 422);
         }
