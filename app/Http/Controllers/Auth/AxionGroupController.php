@@ -28,16 +28,13 @@ class AxionGroupController extends Controller
     {
         $user = Auth::user();
 
-        // 1. Definimos a query base com os relacionamentos necessários
         $query = Group::with(['creator', 'users' => function($q) {
             $q->select('users.id', 'users.name', 'users.email'); 
         }]);
 
         if ($user->is_admin) {
-            // Se for admin global, traz tudo
             $groups = $query->paginate(15);
         } else {
-            // Se for usuário comum, aplica o filtro de Criador OU Membro
             $groups = $query->where('creator_id', $user->id)
                 ->orWhereHas('users', function ($q) use ($user) {
                     $q->where('group_user.user_id', $user->id);
@@ -63,18 +60,24 @@ class AxionGroupController extends Controller
         ),
         responses: [
             new OA\Response(response: 201, description: 'Grupo criado com sucesso'),
-            new OA\Response(response: 422, description: 'Erro de validação'),
+            new OA\Response(response: 422, description: 'Erro de validação: Nome já em uso ou inválido'),
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
     public function store(Request $request)
     {
+        // CORREÇÃO: Adicionado 'unique:groups,name' para impedir duplicatas
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
+            'name' => 'required|string|max:255|unique:groups,name',
+        ], [
+            'name.unique' => 'Já existe um grupo cadastrado com este nome.'
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
+            return response()->json([
+                'message' => 'Erro de validação',
+                'errors' => $validator->errors()
+            ], 422);
         }
 
         $group = Group::create([
@@ -140,8 +143,8 @@ class AxionGroupController extends Controller
         ),
         responses: [
             new OA\Response(response: 200, description: 'Membro adicionado com sucesso'),
-            new OA\Response(response: 403, description: 'Acesso negado: Requer ser Admin do Grupo ou Admin Global'),
-            new OA\Response(response: 422, description: 'Erro de validação ou usuário já existente')
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 422, description: 'Erro de validação')
         ]
     )]
     public function addMember(Request $request, $groupId)
@@ -186,7 +189,7 @@ class AxionGroupController extends Controller
         ],
         responses: [
             new OA\Response(response: 200, description: 'Membro promovido com sucesso'),
-            new OA\Response(response: 403, description: 'Ação negada: Requer privilégios administrativos')
+            new OA\Response(response: 403, description: 'Ação negada')
         ]
     )]
     public function promoteMember($groupId, $userId)
@@ -219,8 +222,7 @@ class AxionGroupController extends Controller
         ],
         responses: [
             new OA\Response(response: 200, description: 'Removido com sucesso'),
-            new OA\Response(response: 422, description: 'O grupo precisa de pelo menos um administrador'),
-            new OA\Response(response: 403, description: 'Sem permissão para remover este usuário')
+            new OA\Response(response: 422, description: 'O grupo precisa de pelo menos um administrador')
         ]
     )]
     public function removeMember($groupId, $userId)
@@ -259,7 +261,7 @@ class AxionGroupController extends Controller
         ],
         responses: [
             new OA\Response(response: 200, description: 'Grupo excluído com sucesso'),
-            new OA\Response(response: 403, description: 'Acesso negado: Requer ser Criador ou Admin Global'),
+            new OA\Response(response: 403, description: 'Acesso negado'),
             new OA\Response(response: 404, description: 'Grupo não encontrado')
         ]
     )]
