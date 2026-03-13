@@ -43,14 +43,16 @@ Route::prefix('v1')->group(function () {
             Route::get('/{id}', [AxionGroupController::class, 'show']);
             Route::delete('/{id}', [AxionGroupController::class, 'destroy']);
             Route::post('/{group_id}/members', [AxionGroupController::class, 'addMember']);
+            
+            // Promoção e Rebaixamento de Membros
             Route::patch('/{group_id}/members/{user_id}/promote', [AxionGroupController::class, 'promoteMember']);
+            Route::patch('/{group_id}/members/{user_id}/demote', [AxionGroupController::class, 'demoteMember']); // <--- ADICIONADA
+            
             Route::delete('/{group_id}/members/{user_id}', [AxionGroupController::class, 'removeMember']);
         });
 
         // --- Módulo Administrativo (Apenas Super Admin) ---
         Route::middleware('admin')->group(function () {
-            
-            // MANTIDAS: Rotas de usuários sem o prefixo /admin (ex: /api/v1/users)
             Route::get('/users', [AxionAuthController::class, 'index']);
             Route::get('/users/{id}', [AxionAuthController::class, 'show']);
             Route::post('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
@@ -59,11 +61,7 @@ Route::prefix('v1')->group(function () {
             Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
 
-            // AJUSTADA: Rota de Auditoria com prefixo manual para bater com o Swagger
-            // URL: /api/v1/admin/audit-logs
             Route::get('/admin/audit-logs', [AuditLogController::class, 'index']);
-
-            // Grupos do sistema (Admin)
             Route::get('/admin/groups', [AxionGroupController::class, 'index']);
         });
     });

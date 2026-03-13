@@ -66,7 +66,6 @@ class AxionGroupController extends Controller
     )]
     public function store(Request $request)
     {
-        // CORREÇÃO: Adicionado 'unique:groups,name' para impedir duplicatas
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255|unique:groups,name',
         ], [
@@ -209,6 +208,49 @@ class AxionGroupController extends Controller
         $group->users()->updateExistingPivot($userId, ['role' => 'admin']);
 
         return response()->json(['message' => 'Usuário promovido a administrador do grupo.']);
+    }
+
+    /* --- MÉTODO ADICIONADO: DEMOTE MEMBER --- */
+    #[OA\Patch(
+        path: '/api/v1/groups/{id}/members/{user_id}/demote',
+        summary: 'Rebaixar administrador para membro comum',
+        tags: ['Grupos'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Cargo removido com sucesso'),
+            new OA\Response(response: 403, description: 'Ação negada'),
+            new OA\Response(response: 422, description: 'Erro: O grupo não pode ficar sem administrador')
+        ]
+    )]
+    public function demoteMember($groupId, $userId)
+    {
+        $group = Group::findOrFail($groupId);
+        
+        $isSystemAdmin = Auth::user()->is_admin;
+        $isGroupAdmin = $group->users()
+            ->where('user_id', Auth::id())
+            ->wherePivot('role', 'admin')
+            ->exists();
+
+        if (!$isSystemAdmin && !$isGroupAdmin) {
+            return response()->json(['message' => 'Ação negada.'], 403);
+        }
+
+        // Verifica se é o último admin para impedir que o grupo fique acéfalo
+        $adminCount = $group->users()->wherePivot('role', 'admin')->count();
+        $isTargetAdmin = $group->users()->where('user_id', $userId)->wherePivot('role', 'admin')->exists();
+
+        if ($isTargetAdmin && $adminCount <= 1) {
+            return response()->json(['message' => 'O grupo precisa de pelo menos um administrador ativo.'], 422);
+        }
+
+        $group->users()->updateExistingPivot($userId, ['role' => 'member']);
+
+        return response()->json(['message' => 'Usuário rebaixado para membro comum.']);
     }
 
     #[OA\Delete(
