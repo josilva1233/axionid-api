@@ -8,7 +8,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
 use OpenApi\Attributes as OA;
 
 #[OA\Tag(name: 'Grupos', description: 'Gerenciamento de grupos e membros')]
@@ -27,7 +26,6 @@ class AxionGroupController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-
         $query = Group::with(['creator', 'users' => function($q) {
             $q->select('users.id', 'users.name', 'users.email'); 
         }]);
@@ -60,8 +58,7 @@ class AxionGroupController extends Controller
         ),
         responses: [
             new OA\Response(response: 201, description: 'Grupo criado com sucesso'),
-            new OA\Response(response: 422, description: 'Erro de validação: Nome já em uso ou inválido'),
-            new OA\Response(response: 401, description: 'Não autenticado')
+            new OA\Response(response: 422, description: 'Erro de validação')
         ]
     )]
     public function store(Request $request)
@@ -74,7 +71,7 @@ class AxionGroupController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
-                'message' => 'Esse nome de grupo já está em uso. Por favor, escolha outro.',
+                'message' => 'Esse nome de grupo já está em uso.',
                 'errors' => $validator->errors()
             ], 422);
         }
@@ -101,9 +98,8 @@ class AxionGroupController extends Controller
             new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Dados do grupo e membros'),
-            new OA\Response(response: 403, description: 'Acesso negado'),
-            new OA\Response(response: 404, description: 'Grupo não encontrado')
+            new OA\Response(response: 200, description: 'Dados do grupo'),
+            new OA\Response(response: 403, description: 'Acesso negado')
         ]
     )]
     public function show($id)
@@ -114,11 +110,8 @@ class AxionGroupController extends Controller
             return response()->json(['message' => 'Grupo não encontrado.'], 404);
         }
 
-        $isSystemAdmin = Auth::user()->is_admin;
-        $isMember = $group->users->contains(Auth::id());
-
-        if (!$isSystemAdmin && !$isMember) {
-            return response()->json(['message' => 'Você não tem acesso a este grupo.'], 403);
+        if (!Auth::user()->is_admin && !$group->users->contains(Auth::id())) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
         }
 
         return response()->json($group);
@@ -134,47 +127,29 @@ class AxionGroupController extends Controller
         ],
         requestBody: new OA\RequestBody(
             required: true,
-            content: new OA\JsonContent(
-                properties: [
-                    new OA\Property(property: 'user_id', type: 'integer', example: 5)
-                ]
-            )
+            content: new OA\JsonContent(properties: [new OA\Property(property: 'user_id', type: 'integer')])
         ),
         responses: [
-            new OA\Response(response: 200, description: 'Membro adicionado com sucesso'),
-            new OA\Response(response: 403, description: 'Acesso negado'),
-            new OA\Response(response: 422, description: 'Erro de validação')
+            new OA\Response(response: 200, description: 'Adicionado com sucesso')
         ]
     )]
     public function addMember(Request $request, $groupId)
     {
         $group = Group::findOrFail($groupId);
+        $user = Auth::user();
         
-        $isSystemAdmin = Auth::user()->is_admin;
-        $isGroupAdmin = $group->users()
-            ->where('user_id', Auth::id())
-            ->wherePivot('role', 'admin')
-            ->exists();
+        $isGroupAdmin = $group->users()->where('user_id', $user->id)->wherePivot('role', 'admin')->exists();
 
-        if (!$isSystemAdmin && !$isGroupAdmin) {
-            return response()->json(['message' => 'Apenas administradores podem convidar membros.'], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
+        if (!$user->is_admin && !$isGroupAdmin) {
+            return response()->json(['message' => 'Ação negada.'], 403);
         }
 
         if ($group->users()->where('user_id', $request->user_id)->exists()) {
-            return response()->json(['message' => 'Este usuário já é membro do grupo.'], 422);
+            return response()->json(['message' => 'Usuário já é membro.'], 422);
         }
 
         $group->users()->attach($request->user_id, ['role' => 'member']);
-
-        return response()->json(['message' => 'Membro adicionado com sucesso.']);
+        return response()->json(['message' => 'Membro adicionado.']);
     }
 
     #[OA\Patch(
@@ -187,34 +162,28 @@ class AxionGroupController extends Controller
             new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Membro promovido com sucesso'),
-            new OA\Response(response: 403, description: 'Ação negada')
+            new OA\Response(response: 200, description: 'Promovido')
         ]
     )]
     public function promoteMember($groupId, $userId)
     {
         $group = Group::findOrFail($groupId);
+        $user = Auth::user();
         
-        $isSystemAdmin = Auth::user()->is_admin;
-        $isGroupAdmin = $group->users()
-            ->where('user_id', Auth::id())
-            ->wherePivot('role', 'admin')
-            ->exists();
+        $isGroupAdmin = $group->users()->where('user_id', $user->id)->wherePivot('role', 'admin')->exists();
 
-        if (!$isSystemAdmin && !$isGroupAdmin) {
-            return response()->json(['message' => 'Ação negada. Requer privilégios administrativos.'], 403);
+        if (!$user->is_admin && !$isGroupAdmin) {
+            return response()->json(['message' => 'Ação negada.'], 403);
         }
 
         $group->users()->updateExistingPivot($userId, ['role' => 'admin']);
-
-        return response()->json(['message' => 'Usuário promovido a administrador do grupo.']);
+        return response()->json(['message' => 'Promovido a admin do grupo.']);
     }
 
-/* --- MÉTODO ATUALIZADO: DEMOTE MEMBER (BLOQUEIO DE AUTO-REBAIXAMENTO) --- */
     #[OA\Patch(
         path: '/api/v1/groups/{group_id}/members/{user_id}/demote',
         summary: 'Rebaixar administrador para membro comum',
-        description: 'Altera a função de um admin para membro. O criador do grupo e o próprio usuário logado não podem ser rebaixados por si mesmos.',
+        description: 'O Admin Total do sistema ignora as restrições de dono.',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         parameters: [
@@ -222,45 +191,37 @@ class AxionGroupController extends Controller
             new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Cargo removido com sucesso'),
-            new OA\Response(response: 403, description: 'Ação negada (Apenas outros admins podem realizar esta ação)'),
-            new OA\Response(response: 422, description: 'Erro: O dono ou você mesmo não podem ser rebaixados')
+            new OA\Response(response: 200, description: 'Rebaixado')
         ]
     )]
     public function demoteMember($groupId, $userId)
     {
         $group = Group::findOrFail($groupId);
-        $authId = Auth::id();
+        $user = Auth::user();
 
-        // 1. Não pode rebaixar o Criador
-        if ((int)$userId === (int)$group->creator_id) {
-            return response()->json(['message' => 'O proprietário do grupo não pode ser rebaixado.'], 422);
-        }
+        // Se NÃO for Admin do Sistema, aplica as restrições
+        if (!$user->is_admin) {
+            if ((int)$userId === (int)$group->creator_id) {
+                return response()->json(['message' => 'O proprietário não pode ser rebaixado.'], 422);
+            }
 
-        // 2. NOVA REGRA: Não pode rebaixar a si mesmo
-        if ((int)$userId === (int)$authId) {
-            return response()->json(['message' => 'Você não pode remover sua própria função de administrador.'], 422);
-        }
+            if ((int)$userId === (int)$user->id) {
+                return response()->json(['message' => 'Você não pode rebaixar a si mesmo.'], 422);
+            }
 
-        $isSystemAdmin = Auth::user()->is_admin;
-        $isGroupAdmin = $group->users()
-            ->where('user_id', $authId)
-            ->wherePivot('role', 'admin')
-            ->exists();
-
-        if (!$isSystemAdmin && !$isGroupAdmin) {
-            return response()->json(['message' => 'Você não tem permissão para realizar esta ação.'], 403);
+            $isGroupAdmin = $group->users()->where('user_id', $user->id)->wherePivot('role', 'admin')->exists();
+            if (!$isGroupAdmin) {
+                return response()->json(['message' => 'Acesso negado.'], 403);
+            }
         }
 
         $group->users()->updateExistingPivot($userId, ['role' => 'member']);
-
-        return response()->json(['message' => 'Usuário rebaixado com sucesso.']);
+        return response()->json(['message' => 'Rebaixado para membro comum.']);
     }
 
-#[OA\Delete(
+    #[OA\Delete(
         path: '/api/v1/groups/{id}/members/{user_id}',
         summary: 'Remover membro ou sair do grupo',
-        description: 'Remove um usuário do grupo. O criador do grupo nunca pode ser removido.',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         parameters: [
@@ -268,47 +229,36 @@ class AxionGroupController extends Controller
             new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Removido com sucesso'),
-            new OA\Response(response: 403, description: 'Ação negada'),
-            new OA\Response(response: 422, description: 'Erro: Não é possível remover o dono do grupo ou o último administrador')
+            new OA\Response(response: 200, description: 'Removido')
         ]
     )]
     public function removeMember($groupId, $userId)
     {
         $group = Group::findOrFail($groupId);
-        $authId = Auth::id();
+        $user = Auth::user();
 
-        // 1. REGRA: Não pode remover o DONO/CRIADOR do grupo
-        if ((int)$userId === (int)$group->creator_id) {
-            return response()->json([
-                'message' => 'O proprietário do grupo não pode ser removido do grupo.'
-            ], 422);
-        }
+        // Admin Total ignora as travas de remoção
+        if (!$user->is_admin) {
+            if ((int)$userId === (int)$group->creator_id) {
+                return response()->json(['message' => 'O proprietário não pode ser removido.'], 422);
+            }
 
-        $isSystemAdmin = Auth::user()->is_admin;
-        $isGroupAdmin = $group->users()
-            ->where('user_id', $authId)
-            ->wherePivot('role', 'admin')
-            ->exists();
+            $isGroupAdmin = $group->users()->where('user_id', $user->id)->wherePivot('role', 'admin')->exists();
+            if (!$isGroupAdmin && $user->id != $userId) {
+                return response()->json(['message' => 'Ação negada.'], 403);
+            }
 
-        // 2. Permissão: Só admin (sistema/grupo) pode remover outros, ou o próprio usuário sair
-        if (!$isSystemAdmin && !$isGroupAdmin && $authId != $userId) {
-            return response()->json(['message' => 'Ação negada.'], 403);
-        }
-
-        // 3. REGRA: Se for remover um Admin, não pode ser o último
-        $isRemovingAdmin = $group->users()->where('user_id', $userId)->wherePivot('role', 'admin')->exists();
-        if ($isRemovingAdmin) {
-            $adminCount = $group->users()->wherePivot('role', 'admin')->count();
-            if ($adminCount <= 1) {
-                return response()->json(['message' => 'O grupo precisa de pelo menos um administrador.'], 422);
+            // Impede deixar o grupo sem admin
+            $isTargetAdmin = $group->users()->where('user_id', $userId)->wherePivot('role', 'admin')->exists();
+            if ($isTargetAdmin && $group->users()->wherePivot('role', 'admin')->count() <= 1) {
+                return response()->json(['message' => 'O grupo precisa de ao menos um administrador.'], 422);
             }
         }
 
         $group->users()->detach($userId);
-
-        return response()->json(['message' => 'Membro removido com sucesso.']);
+        return response()->json(['message' => 'Removido com sucesso.']);
     }
+
     #[OA\Delete(
         path: '/api/v1/groups/{id}',
         summary: 'Excluir grupo permanentemente',
@@ -318,9 +268,7 @@ class AxionGroupController extends Controller
             new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Grupo excluído com sucesso'),
-            new OA\Response(response: 403, description: 'Acesso negado'),
-            new OA\Response(response: 404, description: 'Grupo não encontrado')
+            new OA\Response(response: 200, description: 'Excluído')
         ]
     )]
     public function destroy($id)
@@ -329,7 +277,7 @@ class AxionGroupController extends Controller
         $user = Auth::user();
 
         if (!$user->is_admin && $group->creator_id !== $user->id) {
-            return response()->json(['message' => 'Você não tem permissão para excluir este grupo.'], 403);
+            return response()->json(['message' => 'Apenas o dono ou admin do sistema podem excluir o grupo.'], 403);
         }
 
         $group->users()->detach();
