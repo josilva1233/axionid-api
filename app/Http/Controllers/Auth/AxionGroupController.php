@@ -210,48 +210,54 @@ class AxionGroupController extends Controller
         return response()->json(['message' => 'Usuário promovido a administrador do grupo.']);
     }
 
-    /* --- MÉTODO ADICIONADO: DEMOTE MEMBER --- */
+/* --- MÉTODO ADICIONADO: DEMOTE MEMBER (COM TRAVA PARA DONO) --- */
     #[OA\Patch(
-        path: '/api/v1/groups/{id}/members/{user_id}/demote',
+        path: '/api/v1/groups/{group_id}/members/{user_id}/demote',
         summary: 'Rebaixar administrador para membro comum',
+        description: 'Altera a função de um admin para membro. O criador do grupo não pode ser rebaixado.',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+            new OA\Parameter(name: 'group_id', in: 'path', description: 'ID do grupo', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'user_id', in: 'path', description: 'ID do usuário a ser rebaixado', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
             new OA\Response(response: 200, description: 'Cargo removido com sucesso'),
-            new OA\Response(response: 403, description: 'Ação negada'),
-            new OA\Response(response: 422, description: 'Erro: O grupo não pode ficar sem administrador')
+            new OA\Response(response: 403, description: 'Ação negada (Apenas admins ou super admins podem realizar esta ação)'),
+            new OA\Response(response: 422, description: 'Erro de validação: O dono do grupo ou o último administrador não podem ser rebaixados')
         ]
     )]
-    public function demoteMember($groupId, $userId)
-    {
-        $group = Group::findOrFail($groupId);
-        
-        $isSystemAdmin = Auth::user()->is_admin;
-        $isGroupAdmin = $group->users()
-            ->where('user_id', Auth::id())
-            ->wherePivot('role', 'admin')
-            ->exists();
+public function demoteMember($groupId, $userId)
+{
+    $group = Group::findOrFail($groupId);
 
-        if (!$isSystemAdmin && !$isGroupAdmin) {
-            return response()->json(['message' => 'Ação negada.'], 403);
-        }
-
-        // Verifica se é o último admin para impedir que o grupo fique acéfalo
-        $adminCount = $group->users()->wherePivot('role', 'admin')->count();
-        $isTargetAdmin = $group->users()->where('user_id', $userId)->wherePivot('role', 'admin')->exists();
-
-        if ($isTargetAdmin && $adminCount <= 1) {
-            return response()->json(['message' => 'O grupo precisa de pelo menos um administrador ativo.'], 422);
-        }
-
-        $group->users()->updateExistingPivot($userId, ['role' => 'member']);
-
-        return response()->json(['message' => 'Usuário rebaixado para membro comum.']);
+    // REGRA DE OURO: Não pode rebaixar o criador do grupo
+    if ((int)$userId === (int)$group->creator_id) {
+        return response()->json([
+            'message' => 'O dono/criador do grupo não pode ter sua função administrativa removida.'
+        ], 422);
     }
+
+    $isSystemAdmin = Auth::user()->is_admin;
+    $isGroupAdmin = $group->users()
+        ->where('user_id', Auth::id())
+        ->wherePivot('role', 'admin')
+        ->exists();
+
+    if (!$isSystemAdmin && !$isGroupAdmin) {
+        return response()->json(['message' => 'Ação negada.'], 403);
+    }
+
+    // Impede de deixar o grupo sem nenhum admin (segurança redundante)
+    $adminCount = $group->users()->wherePivot('role', 'admin')->count();
+    if ($adminCount <= 1) {
+        return response()->json(['message' => 'O grupo precisa de pelo menos um administrador ativo.'], 422);
+    }
+
+    $group->users()->updateExistingPivot($userId, ['role' => 'member']);
+
+    return response()->json(['message' => 'Usuário rebaixado para membro comum.']);
+}
 
     #[OA\Delete(
         path: '/api/v1/groups/{id}/members/{user_id}',
