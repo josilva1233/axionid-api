@@ -257,9 +257,10 @@ class AxionGroupController extends Controller
         return response()->json(['message' => 'Usuário rebaixado com sucesso.']);
     }
 
-    #[OA\Delete(
+#[OA\Delete(
         path: '/api/v1/groups/{id}/members/{user_id}',
         summary: 'Remover membro ou sair do grupo',
+        description: 'Remove um usuário do grupo. O criador do grupo nunca pode ser removido.',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         parameters: [
@@ -268,35 +269,46 @@ class AxionGroupController extends Controller
         ],
         responses: [
             new OA\Response(response: 200, description: 'Removido com sucesso'),
-            new OA\Response(response: 422, description: 'O grupo precisa de pelo menos um administrador')
+            new OA\Response(response: 403, description: 'Ação negada'),
+            new OA\Response(response: 422, description: 'Erro: Não é possível remover o dono do grupo ou o último administrador')
         ]
     )]
     public function removeMember($groupId, $userId)
     {
         $group = Group::findOrFail($groupId);
-        
+        $authId = Auth::id();
+
+        // 1. REGRA: Não pode remover o DONO/CRIADOR do grupo
+        if ((int)$userId === (int)$group->creator_id) {
+            return response()->json([
+                'message' => 'O proprietário do grupo não pode ser removido do grupo.'
+            ], 422);
+        }
+
         $isSystemAdmin = Auth::user()->is_admin;
         $isGroupAdmin = $group->users()
-            ->where('user_id', Auth::id())
+            ->where('user_id', $authId)
             ->wherePivot('role', 'admin')
             ->exists();
 
-        if (!$isSystemAdmin && !$isGroupAdmin && Auth::id() != $userId) {
+        // 2. Permissão: Só admin (sistema/grupo) pode remover outros, ou o próprio usuário sair
+        if (!$isSystemAdmin && !$isGroupAdmin && $authId != $userId) {
             return response()->json(['message' => 'Ação negada.'], 403);
         }
 
-        $adminCount = $group->users()->wherePivot('role', 'admin')->count();
+        // 3. REGRA: Se for remover um Admin, não pode ser o último
         $isRemovingAdmin = $group->users()->where('user_id', $userId)->wherePivot('role', 'admin')->exists();
-
-        if ($isRemovingAdmin && $adminCount <= 1) {
-            return response()->json(['message' => 'O grupo precisa de pelo menos um administrador.'], 422);
+        if ($isRemovingAdmin) {
+            $adminCount = $group->users()->wherePivot('role', 'admin')->count();
+            if ($adminCount <= 1) {
+                return response()->json(['message' => 'O grupo precisa de pelo menos um administrador.'], 422);
+            }
         }
 
         $group->users()->detach($userId);
 
         return response()->json(['message' => 'Membro removido com sucesso.']);
     }
-
     #[OA\Delete(
         path: '/api/v1/groups/{id}',
         summary: 'Excluir grupo permanentemente',
