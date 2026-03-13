@@ -210,54 +210,52 @@ class AxionGroupController extends Controller
         return response()->json(['message' => 'Usuário promovido a administrador do grupo.']);
     }
 
-/* --- MÉTODO ADICIONADO: DEMOTE MEMBER (COM TRAVA PARA DONO) --- */
+/* --- MÉTODO ATUALIZADO: DEMOTE MEMBER (BLOQUEIO DE AUTO-REBAIXAMENTO) --- */
     #[OA\Patch(
         path: '/api/v1/groups/{group_id}/members/{user_id}/demote',
         summary: 'Rebaixar administrador para membro comum',
-        description: 'Altera a função de um admin para membro. O criador do grupo não pode ser rebaixado.',
+        description: 'Altera a função de um admin para membro. O criador do grupo e o próprio usuário logado não podem ser rebaixados por si mesmos.',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(name: 'group_id', in: 'path', description: 'ID do grupo', required: true, schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'user_id', in: 'path', description: 'ID do usuário a ser rebaixado', required: true, schema: new OA\Schema(type: 'integer'))
+            new OA\Parameter(name: 'group_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'user_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
             new OA\Response(response: 200, description: 'Cargo removido com sucesso'),
-            new OA\Response(response: 403, description: 'Ação negada (Apenas admins ou super admins podem realizar esta ação)'),
-            new OA\Response(response: 422, description: 'Erro de validação: O dono do grupo ou o último administrador não podem ser rebaixados')
+            new OA\Response(response: 403, description: 'Ação negada (Apenas outros admins podem realizar esta ação)'),
+            new OA\Response(response: 422, description: 'Erro: O dono ou você mesmo não podem ser rebaixados')
         ]
     )]
-public function demoteMember($groupId, $userId)
-{
-    $group = Group::findOrFail($groupId);
+    public function demoteMember($groupId, $userId)
+    {
+        $group = Group::findOrFail($groupId);
+        $authId = Auth::id();
 
-    // REGRA DE OURO: Não pode rebaixar o criador do grupo
-    if ((int)$userId === (int)$group->creator_id) {
-        return response()->json([
-            'message' => 'O dono/criador do grupo não pode ter sua função administrativa removida.'
-        ], 422);
+        // 1. Não pode rebaixar o Criador
+        if ((int)$userId === (int)$group->creator_id) {
+            return response()->json(['message' => 'O proprietário do grupo não pode ser rebaixado.'], 422);
+        }
+
+        // 2. NOVA REGRA: Não pode rebaixar a si mesmo
+        if ((int)$userId === (int)$authId) {
+            return response()->json(['message' => 'Você não pode remover sua própria função de administrador.'], 422);
+        }
+
+        $isSystemAdmin = Auth::user()->is_admin;
+        $isGroupAdmin = $group->users()
+            ->where('user_id', $authId)
+            ->wherePivot('role', 'admin')
+            ->exists();
+
+        if (!$isSystemAdmin && !$isGroupAdmin) {
+            return response()->json(['message' => 'Você não tem permissão para realizar esta ação.'], 403);
+        }
+
+        $group->users()->updateExistingPivot($userId, ['role' => 'member']);
+
+        return response()->json(['message' => 'Usuário rebaixado com sucesso.']);
     }
-
-    $isSystemAdmin = Auth::user()->is_admin;
-    $isGroupAdmin = $group->users()
-        ->where('user_id', Auth::id())
-        ->wherePivot('role', 'admin')
-        ->exists();
-
-    if (!$isSystemAdmin && !$isGroupAdmin) {
-        return response()->json(['message' => 'Ação negada.'], 403);
-    }
-
-    // Impede de deixar o grupo sem nenhum admin (segurança redundante)
-    $adminCount = $group->users()->wherePivot('role', 'admin')->count();
-    if ($adminCount <= 1) {
-        return response()->json(['message' => 'O grupo precisa de pelo menos um administrador ativo.'], 422);
-    }
-
-    $group->users()->updateExistingPivot($userId, ['role' => 'member']);
-
-    return response()->json(['message' => 'Usuário rebaixado para membro comum.']);
-}
 
     #[OA\Delete(
         path: '/api/v1/groups/{id}/members/{user_id}',
