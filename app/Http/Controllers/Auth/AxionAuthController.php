@@ -92,48 +92,58 @@ class AxionAuthController extends Controller
             new OA\Response(response: 422, description: 'Falha no Captcha')
         ]
     )]
-    public function login(Request $request)
-    {
-        $request->validate([
-            'username' => 'required',
-            'password' => 'required',
-            'captcha_token' => 'required'
+public function login(Request $request)
+{
+    $request->validate([
+        'username' => 'required',
+        'password' => 'required',
+        'captcha_token' => 'required'
+    ]);
+
+    // 1. Verificação do reCAPTCHA com o Google
+    $captchaResponse = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+        'secret'   => env('RECAPTCHA_SECRET_KEY'),
+        'response' => $request->captcha_token,
+        'remoteip' => $request->ip(),
+    ]);
+
+    $data = $captchaResponse->json();
+
+    // Se a verificação falhar, registramos o motivo no log do servidor
+    if (!$data['success']) {
+        \Log::error('Falha no reCAPTCHA AxionID:', [
+            'erros' => $data['error-codes'] ?? 'sem códigos',
+            'token_recebido' => substr($request->captcha_token, 0, 15) . '...',
+            'ip' => $request->ip()
         ]);
-
-        // 1. Verificação do reCAPTCHA com o Google
-     $captchaResponse = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
-       'secret'   => config('services.recaptcha.secret') ?? env('RECAPTCHA_SECRET_KEY'),
-       'response' => $request->captcha_token,
-       'remoteip' => $request->ip(),
-     ]);
-
-        if (!$captchaResponse->json('success')) {
-            return response()->json([
-                'message' => 'Falha na verificação de segurança (Bot detectado).'
-            ], 422);
-        }
-
-        // 2. Lógica de busca de usuário (CPF/CNPJ)
-        $loginIdentifier = preg_replace('/[^0-9]/', '', $request->username);
-        $user = User::where('cpf_cnpj', $loginIdentifier)->first();
-
-        if (!$user || !Hash::check($request->password, $user->password)) {
-            return response()->json(['message' => 'Credenciais inválidas.'], 401);
-        }
-
-        if (!$user->is_active) {
-            return response()->json(['message' => 'Esta conta foi suspensa por um administrador.'], 403);
-        }
-
-        $user->tokens()->delete(); 
-        $token = $user->createToken('axion_token')->plainTextToken;
 
         return response()->json([
-            'token' => $token,
-            'profile_completed' => $user->profile_completed,
-            'user' => $user
-        ]);
+            'message' => 'Falha na verificação de segurança (Bot detectado).',
+            'debug_info' => $data['error-codes'] ?? [] // Isso ajuda a identificar o erro na hora
+        ], 422);
     }
+
+    // 2. Lógica de busca de usuário (CPF/CNPJ)
+    $loginIdentifier = preg_replace('/[^0-9]/', '', $request->username);
+    $user = User::where('cpf_cnpj', $loginIdentifier)->first();
+
+    if (!$user || !Hash::check($request->password, $user->password)) {
+        return response()->json(['message' => 'Credenciais inválidas.'], 401);
+    }
+
+    if (!$user->is_active) {
+        return response()->json(['message' => 'Esta conta foi suspensa por um administrador.'], 403);
+    }
+
+    $user->tokens()->delete(); 
+    $token = $user->createToken('axion_token')->plainTextToken;
+
+    return response()->json([
+        'token' => $token,
+        'profile_completed' => $user->profile_completed,
+        'user' => $user
+    ]);
+}
 
     #[OA\Post(
         path: '/api/v1/complete-profile',
