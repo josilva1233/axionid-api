@@ -16,28 +16,63 @@ class AxionGroupController extends Controller
     #[OA\Get(
         path: '/api/v1/groups',
         summary: 'Listar grupos (Usuário vê os seus, Admin vê todos)',
+        description: 'Filtra grupos pelo nome do grupo ou nome de integrantes/criador.',
         tags: ['Grupos'],
         security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'name',
+                in: 'query',
+                description: 'Nome do grupo ou nome de um usuário membro',
+                required: false,
+                schema: new OA\Schema(type: 'string')
+            ),
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                description: 'Página para paginação',
+                required: false,
+                schema: new OA\Schema(type: 'integer')
+            )
+        ],
         responses: [
-            new OA\Response(response: 200, description: 'Lista de grupos filtrada por permissão'),
+            new OA\Response(response: 200, description: 'Lista de grupos filtrada'),
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
     public function index(Request $request)
     {
         $user = Auth::user();
+        $searchTerm = $request->name;
+
         $query = Group::with(['creator', 'users' => function($q) {
             $q->select('users.id', 'users.name', 'users.email'); 
         }]);
 
+        // --- Início da Lógica de Busca ---
+        if (!empty($searchTerm)) {
+            $query->where(function($q) use ($searchTerm) {
+                $q->where('name', 'like', '%' . $searchTerm . '%')
+                  ->orWhereHas('users', function($userQuery) use ($searchTerm) {
+                      $userQuery->where('name', 'like', '%' . $searchTerm . '%');
+                  })
+                  ->orWhereHas('creator', function($creatorQuery) use ($searchTerm) {
+                      $creatorQuery->where('name', 'like', '%' . $searchTerm . '%');
+                  });
+            });
+        }
+        // --- Fim da Lógica de Busca ---
+
         if ($user->is_admin) {
             $groups = $query->paginate(15);
         } else {
-            $groups = $query->where('creator_id', $user->id)
-                ->orWhereHas('users', function ($q) use ($user) {
-                    $q->where('group_user.user_id', $user->id);
-                })
-                ->paginate(15);
+            // Mantém a regra original: Dono ou Membro
+            $groups = $query->where(function($q) use ($user) {
+                $q->where('creator_id', $user->id)
+                  ->orWhereHas('users', function ($q) use ($user) {
+                      $q->where('group_user.user_id', $user->id);
+                  });
+            })->paginate(15);
         }
 
         return response()->json($groups);
@@ -199,7 +234,6 @@ class AxionGroupController extends Controller
         $group = Group::findOrFail($groupId);
         $user = Auth::user();
 
-        // Se NÃO for Admin do Sistema, aplica as restrições
         if (!$user->is_admin) {
             if ((int)$userId === (int)$group->creator_id) {
                 return response()->json(['message' => 'O proprietário não pode ser rebaixado.'], 422);
@@ -237,7 +271,6 @@ class AxionGroupController extends Controller
         $group = Group::findOrFail($groupId);
         $user = Auth::user();
 
-        // Admin Total ignora as travas de remoção
         if (!$user->is_admin) {
             if ((int)$userId === (int)$group->creator_id) {
                 return response()->json(['message' => 'O proprietário não pode ser removido.'], 422);
@@ -248,7 +281,6 @@ class AxionGroupController extends Controller
                 return response()->json(['message' => 'Ação negada.'], 403);
             }
 
-            // Impede deixar o grupo sem admin
             $isTargetAdmin = $group->users()->where('user_id', $userId)->wherePivot('role', 'admin')->exists();
             if ($isTargetAdmin && $group->users()->wherePivot('role', 'admin')->count() <= 1) {
                 return response()->json(['message' => 'O grupo precisa de ao menos um administrador.'], 422);
