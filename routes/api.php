@@ -4,30 +4,10 @@ use App\Http\Controllers\Auth\AxionAuthController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\SocialAuthController;
 use App\Http\Controllers\Auth\AxionGroupController;
-use App\Http\Controllers\Auth\AuditLogController; // Importação confirmada
+use App\Http\Controllers\Auth\AuditLogController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
-
-/*
-|--------------------------------------------------------------------------
-| API Routes - AxionID
-|--------------------------------------------------------------------------
-*/
-
-// Health Check
-Route::get('/health', function() {
-    try {
-        DB::connection()->getPdo();
-        $dbStatus = 'Connected';
-    } catch (\Exception $e) {
-        $dbStatus = 'Disconnected';
-    }
-    return response()->json([
-        'status'   => 'UP',
-        'database' => $dbStatus,
-    ], $dbStatus === 'Connected' ? 200 : 503);
-});
 
 Route::prefix('v1')->group(function () {
     
@@ -44,7 +24,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
     Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
     
-    // Rotas Protegidas (Logados)
+    // Rotas Protegidas
     Route::middleware('auth:sanctum')->group(function () {
         
         Route::post('/logout', [AxionAuthController::class, 'logout']);
@@ -56,7 +36,7 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/users/find-by-email/{email}', [AxionAuthController::class, 'findByEmail']);
 
-        // --- Módulo de Grupos (Usuários comuns) ---
+        // --- Módulo de Grupos ---
         Route::prefix('groups')->group(function () {
             Route::get('/', [AxionGroupController::class, 'index']);
             Route::post('/', [AxionGroupController::class, 'store']);
@@ -68,10 +48,9 @@ Route::prefix('v1')->group(function () {
         });
 
         // --- Módulo Administrativo (Apenas Super Admin) ---
-        // Adicionamos o prefixo 'admin' aqui para bater com o Swagger /api/v1/admin/...
-        Route::middleware('admin')->prefix('admin')->group(function () {
+        Route::middleware('admin')->group(function () {
             
-            // Rotas de Usuários (Mantendo a lógica agora sob prefixo admin)
+            // MANTIDAS: Rotas de usuários sem o prefixo /admin (ex: /api/v1/users)
             Route::get('/users', [AxionAuthController::class, 'index']);
             Route::get('/users/{id}', [AxionAuthController::class, 'show']);
             Route::post('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
@@ -80,11 +59,12 @@ Route::prefix('v1')->group(function () {
             Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
 
-            // Rota de Auditoria (Corrigida para o novo Controller)
-            Route::get('/audit-logs', [AuditLogController::class, 'index']);
+            // AJUSTADA: Rota de Auditoria com prefixo manual para bater com o Swagger
+            // URL: /api/v1/admin/audit-logs
+            Route::get('/admin/audit-logs', [AuditLogController::class, 'index']);
 
-            // Grupos do sistema
-            Route::get('/groups', [AxionGroupController::class, 'index']);
+            // Grupos do sistema (Admin)
+            Route::get('/admin/groups', [AxionGroupController::class, 'index']);
         });
     });
 });
