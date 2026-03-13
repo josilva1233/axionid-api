@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use OpenApi\Attributes as OA;
 
 class AuditLogController extends Controller
@@ -15,31 +15,54 @@ class AuditLogController extends Controller
         summary: 'Ver logs de auditoria (Admin)',
         tags: ['Administração'],
         security: [['sanctum' => []]],
+        // Adicionando os parâmetros para o Swagger detectar os campos de pesquisa
+        parameters: [
+            new OA\Parameter(
+                name: 'method',
+                in: 'query',
+                description: 'Filtrar por método HTTP (GET, POST, etc)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'POST')
+            ),
+            new OA\Parameter(
+                name: 'date',
+                in: 'query',
+                description: 'Filtrar por data específica (AAAA-MM-DD)',
+                required: false,
+                schema: new OA\Schema(type: 'string', format: 'date', example: '2023-10-27')
+            ),
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                description: 'Número da página para paginação',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 1)
+            )
+        ],
         responses: [
-            new OA\Response(response: 200, description: 'Logs de auditoria'),
+            new OA\Response(response: 200, description: 'Logs de auditoria recuperados com sucesso'),
             new OA\Response(response: 403, description: 'Acesso negado')
         ]
     )]
     public function index(Request $request)
     {
-        // Mantendo a lógica de proteção original
         if (!Auth::user()->is_admin) {
             return response()->json(['message' => 'Acesso negado.'], 403);
         }
 
-        $query = DB::table('audit_logs')
-            ->leftJoin('users', 'audit_logs.user_id', '=', 'users.id')
-            ->select('audit_logs.*', 'users.name as user_name', 'users.email as user_email');
+        // Usando o Model AuditLog (mais limpo que o DB::table)
+        $query = AuditLog::with('user:id,name,email');
 
-        // Filtros originais mantidos
         if ($request->filled('method')) {
-            $query->where('audit_logs.method', strtoupper($request->method));
+            $query->where('method', strtoupper($request->method));
         }
 
         if ($request->filled('date')) {
-            $query->whereDate('audit_logs.created_at', $request->date);
+            $query->whereDate('created_at', $request->date);
         }
 
-        return response()->json($query->orderBy('audit_logs.created_at', 'desc')->paginate(20));
+        return response()->json(
+            $query->orderBy('created_at', 'desc')->paginate(20)
+        );
     }
 }
