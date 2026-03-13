@@ -101,11 +101,11 @@ class AxionAuthController extends Controller
         ]);
 
         // 1. Verificação do reCAPTCHA com o Google
-        $captchaResponse = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
-            'secret'   => env('RECAPTCHA_SECRET_KEY'),
-            'response' => $request->captcha_token,
-            'remoteip' => $request->ip(),
-        ]);
+     $captchaResponse = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+       'secret'   => config('services.recaptcha.secret') ?? env('RECAPTCHA_SECRET_KEY'),
+       'response' => $request->captcha_token,
+       'remoteip' => $request->ip(),
+     ]);
 
         if (!$captchaResponse->json('success')) {
             return response()->json([
