@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http; // Importado para o reCAPTCHA
 use OpenApi\Attributes as OA;
 
 class AxionAuthController extends Controller
@@ -79,14 +80,16 @@ class AxionAuthController extends Controller
             content: new OA\JsonContent(
                 properties: [
                     new OA\Property(property: 'username', type: 'string', description: 'CPF ou CNPJ', example: '12345678901'),
-                    new OA\Property(property: 'password', type: 'string', example: 'senha123')
+                    new OA\Property(property: 'password', type: 'string', example: 'senha123'),
+                    new OA\Property(property: 'captcha_token', type: 'string', example: 'token_do_google')
                 ]
             )
         ),
         responses: [
             new OA\Response(response: 200, description: 'Login realizado com sucesso'),
             new OA\Response(response: 401, description: 'Credenciais inválidas'),
-            new OA\Response(response: 403, description: 'Conta suspensa')
+            new OA\Response(response: 403, description: 'Conta suspensa'),
+            new OA\Response(response: 422, description: 'Falha no Captcha')
         ]
     )]
     public function login(Request $request)
@@ -94,8 +97,23 @@ class AxionAuthController extends Controller
         $request->validate([
             'username' => 'required',
             'password' => 'required',
+            'captcha_token' => 'required'
         ]);
 
+        // 1. Verificação do reCAPTCHA com o Google
+        $captchaResponse = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret'   => env('RECAPTCHA_SECRET_KEY'),
+            'response' => $request->captcha_token,
+            'remoteip' => $request->ip(),
+        ]);
+
+        if (!$captchaResponse->json('success')) {
+            return response()->json([
+                'message' => 'Falha na verificação de segurança (Bot detectado).'
+            ], 422);
+        }
+
+        // 2. Lógica de busca de usuário (CPF/CNPJ)
         $loginIdentifier = preg_replace('/[^0-9]/', '', $request->username);
         $user = User::where('cpf_cnpj', $loginIdentifier)->first();
 
@@ -391,16 +409,15 @@ class AxionAuthController extends Controller
         $user->update(['is_admin' => false]);
         return response()->json(['message' => 'Privilégios removidos com sucesso.']);
     }
+
     public function findByEmail($email)
     {
-        // O e-mail vem da URL
         $user = User::where('email', $email)->first();
 
         if (!$user) {
             return response()->json(['message' => 'E-mail não encontrado no sistema.'], 404);
         }
 
-        // Retornamos apenas o ID e o Nome para o Front-end
         return response()->json([
             'id' => $user->id,
             'name' => $user->name,
