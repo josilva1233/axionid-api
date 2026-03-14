@@ -48,7 +48,7 @@ Route::prefix('v1')->group(function () {
             
             // Promoção e Rebaixamento de Membros dentro do grupo
             Route::patch('/{group_id}/members/{user_id}/promote', [AxionGroupController::class, 'promoteMember']);
-            Route::patch('/{group_id}/members/{user_id}/demote', [AxionGroupController::class, 'promoteMember']); 
+            Route::patch('/{group_id}/members/{user_id}/demote', [AxionGroupController::class, 'demoteMember']);
             
             Route::delete('/{group_id}/members/{user_id}', [AxionGroupController::class, 'removeMember']);
         });
