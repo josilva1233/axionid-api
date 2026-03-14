@@ -59,4 +59,27 @@ class User extends Authenticatable
     // O campo 'role' na tabela pivô define se é 'admin' ou 'member'
        return $this->belongsToMany(Group::class)->withPivot('role')->withTimestamps();
     }
+
+    // Dentro do Model User em app/Models/User.php
+
+public function roles()
+{
+    return $this->belongsToMany(Role::class);
+}
+
+/**
+ * Checa se o usuário tem uma permissão específica
+ */
+public function hasPermission(string $permissionName): bool
+{
+    // O usuário é Admin Total? Se sim, nem precisa checar o resto
+    if ($this->is_admin) {
+        return true;
+    }
+
+    // Procura a permissão dentro de todos os papéis que o usuário possui
+    return $this->roles()->whereHas('permissions', function($query) use ($permissionName) {
+        $query->where('name', $permissionName);
+    })->exists();
+}
 }
