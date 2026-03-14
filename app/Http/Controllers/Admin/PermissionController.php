@@ -11,18 +11,31 @@ use OpenApi\Attributes as OA;
 
 class PermissionController extends Controller
 {
-    /**
-     * Atribuir um Papel (Role) a um Usuário
-     */
     #[OA\Post(
         path: '/api/v1/admin/users/{id}/assign-role',
         summary: 'Atribuir cargo ao usuário',
+        description: 'Vincula um cargo (Role) específico a um usuário do sistema.',
         tags: ['Administração - Permissões'],
-        security: [['sanctum' => []]]
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'role_name', type: 'string', example: 'admin')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Cargo atribuído com sucesso'),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 404, description: 'Usuário ou Cargo não encontrado')
+        ]
     )]
     public function assignRole(Request $request, $id)
     {
-        // Apenas o Admin Master (is_admin) pode gerenciar permissões
         if (!auth()->user()->is_admin) {
             return response()->json(['message' => 'Acesso negado.'], 403);
         }
@@ -30,8 +43,7 @@ class PermissionController extends Controller
         $user = User::findOrFail($id);
         $role = Role::where('name', $request->role_name)->firstOrFail();
 
-        // O método sync() evita duplicidade: ele remove os antigos e coloca o novo
-        // Ou use attach() se o usuário puder ter vários cargos
+        // syncWithoutDetaching garante que o usuário ganhe o cargo sem perder os que já tinha
         $user->roles()->syncWithoutDetaching([$role->id]);
 
         return response()->json([
@@ -39,17 +51,39 @@ class PermissionController extends Controller
         ]);
     }
 
-    /**
-     * Listar todas as permissões cadastradas no sistema
-     */
+    #[OA\Get(
+        path: '/api/v1/permissions',
+        summary: 'Listar todas as permissões',
+        tags: ['Administração - Permissões'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Lista de permissões')
+        ]
+    )]
     public function listPermissions()
     {
         return response()->json(Permission::all());
     }
 
-    /**
-     * Criar uma nova permissão (ex: 'relatorios.gerar')
-     */
+    #[OA\Post(
+        path: '/api/v1/permissions',
+        summary: 'Criar uma nova permissão',
+        tags: ['Administração - Permissões'],
+        security: [['sanctum' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', example: 'users.delete'),
+                    new OA\Property(property: 'label', type: 'string', example: 'Excluir Usuários')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: 'Permissão criada'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
+    )]
     public function storePermission(Request $request)
     {
         $validated = $request->validate([
