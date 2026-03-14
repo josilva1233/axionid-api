@@ -55,7 +55,7 @@ Route::prefix('v1')->group(function () {
 
         // --- Módulo Administrativo (Super Admin) ---
         // Unificado para evitar duplicidade de código
-        Route::middleware('admin')->group(function () {
+        Route::middleware('admin')->prefix('admin')->group(function () {
             
             // Gestão de Usuários (Controllers em Auth conforme seu código)
             Route::get('/users', [AxionAuthController::class, 'index']);
