@@ -94,12 +94,70 @@ class AxionAuthController extends Controller
     )]
 public function login(Request $request)
 {
+// 1. BYPASS PARA SWAGGER: Deve vir ANTES da validação e do Google
+    // Se o pedido vem da documentação, preenchemos o captcha_token automaticamente
+    if ($request->header('referer') && str_contains($request->header('referer'), 'api/documentation')) {
+        $request->merge(['captcha_token' => 'swagger_bypass']);
+    }
+
+    // 2. Validação dos campos
     $request->validate([
         'username' => 'required',
         'password' => 'required',
         'captcha_token' => 'required'
     ]);
 
+    // 3. Verificação do reCAPTCHA
+    // Se for o bypass do Swagger, pulamos a consulta ao Google
+    if ($request->captcha_token === 'swagger_bypass') {
+        $captchaSuccess = true;
+    } else {
+        $captchaResponse = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret'   => env('RECAPTCHA_SECRET_KEY'),
+            'response' => $request->captcha_token,
+            'remoteip' => $request->ip(),
+        ]);
+
+        $data = $captchaResponse->json();
+        $captchaSuccess = $data['success'] ?? false;
+
+        // Se a verificação falhar, registramos o erro
+        if (!$captchaSuccess) {
+            \Log::error('Falha no reCAPTCHA AxionID:', [
+                'erros' => $data['error-codes'] ?? 'sem códigos',
+                'token_recebido' => substr($request->captcha_token, 0, 15) . '...',
+                'ip' => $request->ip()
+            ]);
+
+            return response()->json([
+                'message' => 'Falha na verificação de segurança (Bot detectado).',
+                'debug_info' => $data['error-codes'] ?? []
+            ], 422);
+        }
+    }
+
+    // 4. Lógica de busca de usuário (CPF/CNPJ)
+    $loginIdentifier = preg_replace('/[^0-9]/', '', $request->username);
+    $user = User::where('cpf_cnpj', $loginIdentifier)->first();
+
+    if (!$user || !Hash::check($request->password, $user->password)) {
+        return response()->json(['message' => 'Credenciais inválidas.'], 401);
+    }
+
+    // 5. Verificação de conta ativa
+    if (!$user->is_active) {
+        return response()->json(['message' => 'Esta conta foi suspensa por um administrador.'], 403);
+    }
+
+    // 6. Geração do Token (Limpa tokens anteriores para manter apenas uma sessão ativa)
+    $user->tokens()->delete(); 
+    $token = $user->createToken('axion_token')->plainTextToken;
+
+    return response()->json([
+        'token' => $token,
+        'profile_completed' => $user->profile_completed,
+        'user' => $user
+    ]);
     // 1. Verificação do reCAPTCHA com o Google
     $captchaResponse = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
         'secret'   => env('RECAPTCHA_SECRET_KEY'),
