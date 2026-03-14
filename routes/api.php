@@ -60,6 +60,8 @@ Route::prefix('v1')->group(function () {
             // Gestão de Usuários (Controllers em Auth conforme seu código)
             Route::get('/users', [AxionAuthController::class, 'index']);
             Route::get('/users/{id}', [AxionAuthController::class, 'show']);
+            // Rota corrigida: Agora ela bate com o Swagger e faz sentido lógico
+            Route::post('/users/{id}/assign-role', [PermissionController::class, 'assignRole']);
             Route::post('/users/{id}/promote', [AxionAuthController::class, 'promoteToAdmin']);
             Route::post('/users/{id}/remove-admin', [AxionAuthController::class, 'removeAdmin']);
             Route::patch('/users/{id}/toggle-status', [AxionAuthController::class, 'toggleUserStatus']);
@@ -73,8 +75,7 @@ Route::prefix('v1')->group(function () {
             // --- NOVA SEÇÃO: Gestão de IAM (Controller em Admin) ---
             Route::prefix('permissions')->group(function () {
                 Route::get('/', [PermissionController::class, 'listPermissions']); 
-                Route::post('/', [PermissionController::class, 'storePermission']); 
-                Route::post('/assign-role/{id}', [PermissionController::class, 'assignRole']); 
+                Route::post('/', [PermissionController::class, 'storePermission']);  
             });
         });
     });
