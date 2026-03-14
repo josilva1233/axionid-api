@@ -69,8 +69,8 @@ Route::prefix('v1')->group(function () {
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
 
             // Gestão de Auditoria e Grupos Admin
-            Route::get('/admin/audit-logs', [AuditLogController::class, 'index']);
-            Route::get('/admin/groups', [AxionGroupController::class, 'index']);
+            Route::get('/audit-logs', [AuditLogController::class, 'index']);
+            Route::get('/groups', [AxionGroupController::class, 'index']);
 
             // --- NOVA SEÇÃO: Gestão de IAM (Controller em Admin) ---
             Route::prefix('permissions')->group(function () {
