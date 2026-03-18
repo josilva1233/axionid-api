@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\SocialAuthController;
 use App\Http\Controllers\Auth\AxionGroupController;
 use App\Http\Controllers\Auth\AuditLogController;
 use App\Http\Controllers\Admin\PermissionController; // Importado da pasta Admin
+use App\Http\Controllers\ServiceOrder\ServiceOrderController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +54,10 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{group_id}/members/{user_id}', [AxionGroupController::class, 'removeMember']);
         });
 
+         Route::prefix('service-orders')->group(function () {
+            Route::get('/', [ServiceOrderController::class, 'index']);
+            Route::post('/', [ServiceOrderController::class, 'store']);
+        });
         // --- Módulo Administrativo (Super Admin) ---
         // Unificado para evitar duplicidade de código
         Route::middleware('admin')->prefix('admin')->group(function () {
