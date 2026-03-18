@@ -327,6 +327,7 @@ public function login(Request $request)
             'neighborhood' => 'nullable|string',
             'city'         => 'nullable|string',
             'state'        => 'nullable|string',
+            'complement'   => 'nullable|string',
         ]);
 
         $user->update([
@@ -346,13 +347,14 @@ public function login(Request $request)
             )
         );
 
-        return response()->json([
-            'message' => 'Usuário atualizado com sucesso pelo administrador',
-            'admin_info' => [
-                'admin_id' => $admin->id,
-                'updated_at' => now()->toDateTimeString()
-            ]
-        ]);
+return response()->json([
+    'message' => 'Usuário atualizado com sucesso pelo administrador',
+    'user' => $user->load('address'), // Isso garante que o endereço atualizado volte para o React
+    'admin_info' => [
+        'admin_id' => $admin->id,
+        'updated_at' => now()->toDateTimeString()
+    ]
+]);
     }
 
     #[OA\Post(
