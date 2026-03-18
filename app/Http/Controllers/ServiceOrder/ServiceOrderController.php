@@ -94,4 +94,43 @@ class ServiceOrderController extends Controller
 
         return response()->json($os, 201);
     }
+
+    #[OA\Put(
+        path: '/api/v1/service-orders/{id}',
+        summary: 'Atualizar/Atender Ordem de Serviço',
+        description: 'Permite mudar o status (ex: in_progress, completed) e adicionar observações.',
+        tags: ['Ordens de Serviço'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        requestBody: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'status', type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled']),
+                new OA\Property(property: 'technician_notes', type: 'string', example: 'Troca de cabo realizada com sucesso.')
+            ]
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'OS atualizada'),
+            new OA\Response(response: 403, description: 'Sem permissão')
+        ]
+    )]
+    public function update(Request $request, $id)
+    {
+        $os = ServiceOrder::findOrFail($id);
+        
+        // Apenas Admin ou o dono da OS pode editar (ou adicione sua regra de técnico aqui)
+        if (!auth()->user()->is_admin && $os->user_id !== auth()->id()) {
+            return response()->json(['message' => 'Não autorizado'], 403);
+        }
+
+        $os->update($request->only(['status', 'technician_notes']));
+        
+        // Se o status mudar para in_progress, gravamos quem assumiu
+        if ($request->status === 'in_progress') {
+            $os->update(['technician_id' => auth()->id()]);
+        }
+
+        return response()->json($os);
+    }
 }
