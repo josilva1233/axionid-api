@@ -95,25 +95,30 @@ class PermissionController extends Controller
         return response()->json($permission, 201);
     }
 
-    // Vincular uma permissão a um grupo (Role)
-    public function attachPermissionToRole(Request $request, $roleId)
+// Vincular uma permissão a um grupo (Usando o Model Group)
+    public function attachPermissionToRole(Request $request, $groupId)
     {
-        $role = Role::findOrFail($roleId);
+        // Alterado de Role para Group para bater com o ID que o Frontend envia
+        $group = \App\Models\Group::findOrFail($groupId);
+        
+        // Busca a permissão pelo nome (ex: "users.view")
         $permission = Permission::where('name', $request->permission_name)->firstOrFail();
 
-        // Evita duplicatas com syncWithoutDetaching
-        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        // Garante que o relacionamento exista no Model Group.php
+        $group->permissions()->syncWithoutDetaching([$permission->id]);
 
         return response()->json([
-            'message' => "Permissão '{$permission->label}' vinculada ao grupo."
+            'message' => "Permissão '{$permission->label}' vinculada ao grupo '{$group->name}'."
         ]);
     }
 
     // Remover permissão do grupo
-    public function detachPermissionFromRole($roleId, $permissionId)
+    public function detachPermissionFromRole($groupId, $permissionId)
     {
-        $role = Role::findOrFail($roleId);
-        $role->permissions()->detach($permissionId);
+        // Alterado de Role para Group
+        $group = \App\Models\Group::findOrFail($groupId);
+        
+        $group->permissions()->detach($permissionId);
 
         return response()->json(['message' => 'Permissão removida com sucesso.']);
     }

@@ -14,10 +14,12 @@ class Role extends Model
     /**
      * Relacionamento: Um papel tem muitas permissões
      */
-    public function permissions()
-    {
-        return $this->belongsToMany(Permission::class);
-    }
+// Dentro de app/Models/Group.php
+public function permissions()
+{
+    // Isso cria o relacionamento entre Grupos e Permissões
+    return $this->belongsToMany(Permission::class, 'group_permission', 'group_id', 'permission_id');
+}
 
     /**
      * Relacionamento: Um papel pertence a muitos usuários
@@ -26,4 +28,11 @@ class Role extends Model
     {
         return $this->belongsToMany(User::class);
     }
+     
+
+
+
+
+
 }
+
