@@ -11,12 +11,13 @@ return new class extends Migration
      */
 public function up()
 {
-    Schema::create('group_permission', function (鼓BluePrint $table) {
-        $table->id();
-        $table->foreignId('group_id')->constrained()->onDelete('cascade');
-        $table->foreignId('permission_id')->constrained()->onDelete('cascade');
-        $table->timestamps();
-    });
+Schema::create('group_permission', function (Blueprint $table) {
+    $table->id();
+    // Assumindo que suas tabelas se chamam 'groups' e 'permissions'
+    $table->foreignId('group_id')->constrained('groups')->onDelete('cascade');
+    $table->foreignId('permission_id')->constrained('permissions')->onDelete('cascade');
+    $table->timestamps();
+});
 }
 
     /**

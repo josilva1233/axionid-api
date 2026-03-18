@@ -28,4 +28,9 @@ class Group extends Model
     {
         return $this->belongsTo(User::class, 'creator_id');
     }
+
+    public function permissions()
+{
+    return $this->belongsToMany(Permission::class, 'group_permission');
+}
 }
