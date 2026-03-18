@@ -94,4 +94,27 @@ class PermissionController extends Controller
         $permission = Permission::create($validated);
         return response()->json($permission, 201);
     }
+
+    // Vincular uma permissão a um grupo (Role)
+    public function attachPermissionToRole(Request $request, $roleId)
+    {
+        $role = Role::findOrFail($roleId);
+        $permission = Permission::where('name', $request->permission_name)->firstOrFail();
+
+        // Evita duplicatas com syncWithoutDetaching
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+
+        return response()->json([
+            'message' => "Permissão '{$permission->label}' vinculada ao grupo."
+        ]);
+    }
+
+    // Remover permissão do grupo
+    public function detachPermissionFromRole($roleId, $permissionId)
+    {
+        $role = Role::findOrFail($roleId);
+        $role->permissions()->detach($permissionId);
+
+        return response()->json(['message' => 'Permissão removida com sucesso.']);
+    }
 }
