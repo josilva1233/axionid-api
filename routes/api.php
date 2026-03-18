@@ -68,6 +68,13 @@ Route::prefix('v1')->group(function () {
             Route::put('/users/{id}/update-manual', [AxionAuthController::class, 'adminUpdateUser']);
             Route::delete('/users/{id}', [AxionAuthController::class, 'destroy']);
 
+            // --- ADICIONE ESTAS DUAS LINHAS ABAIXO ---
+            Route::post('/groups/{roleId}/permissions', [PermissionController::class, 'attachPermissionToRole']);
+            Route::delete('/groups/{roleId}/permissions/{permissionId}', [PermissionController::class, 'detachPermissionFromRole']);
+    
+            // --- ADICIONE ESTA LINHA TAMBÉM SE QUISER QUE A LISTAGEM APAREÇA NO ADMIN ---
+            Route::get('/permissions', [PermissionController::class, 'listPermissions']);
+
             // Gestão de Auditoria e Grupos Admin
             Route::get('/audit-logs', [AuditLogController::class, 'index']);
             Route::get('/groups', [AxionGroupController::class, 'index']);
