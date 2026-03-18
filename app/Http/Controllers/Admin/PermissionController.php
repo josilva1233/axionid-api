@@ -97,17 +97,26 @@ class PermissionController extends Controller
 
 public function attachPermissionToRole(Request $request, $groupId)
 {
-    // Usamos Group porque no seu Tinker o ID 13 não existia em Role
+    // 1. Localiza o Grupo (ou explode 404 se não achar)
     $group = \App\Models\Group::findOrFail($groupId);
+    
+    // 2. Localiza a Permissão pelo nome enviado
     $permission = \App\Models\Permission::where('name', $request->permission_name)->firstOrFail();
 
+    // 3. REGRA: Verifica se esse grupo já tem essa permissão específica
+    if ($group->permissions()->where('permission_id', $permission->id)->exists()) {
+        return response()->json([
+            'message' => "Esta chave de permissão já está vinculada a este grupo."
+        ], 422); // Status 422: Unprocessable Entity (Erro de regra de negócio)
+    }
+
+    // 4. Se não existe, vincula
     $group->permissions()->syncWithoutDetaching([$permission->id]);
 
     return response()->json([
-        'message' => "Permissão vinculada com sucesso!"
+        'message' => "Permissão '{$permission->label}' vinculada com sucesso!"
     ]);
 }
-
     // Remover permissão do grupo
     public function detachPermissionFromRole($groupId, $permissionId)
     {
