@@ -45,9 +45,10 @@ class AxionGroupController extends Controller
         $user = Auth::user();
         $searchTerm = $request->name;
 
-        $query = Group::with(['creator', 'users' => function($q) {
-            $q->select('users.id', 'users.name', 'users.email'); 
-        }]);
+        // Adicione 'permissions' ao array do with
+    $query = Group::with(['creator', 'permissions', 'users' => function($q) {
+        $q->select('users.id', 'users.name', 'users.email'); 
+    }]);
 
         // --- Início da Lógica de Busca ---
         if (!empty($searchTerm)) {
@@ -139,7 +140,7 @@ class AxionGroupController extends Controller
     )]
     public function show($id)
     {
-        $group = Group::with('users')->find($id);
+        $group = Group::with(['users', 'permissions'])->find($id);
 
         if (!$group) {
             return response()->json(['message' => 'Grupo não encontrado.'], 404);
