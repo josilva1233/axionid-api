@@ -115,22 +115,26 @@ class ServiceOrderController extends Controller
             new OA\Response(response: 403, description: 'Sem permissão')
         ]
     )]
-    public function update(Request $request, $id)
-    {
-        $os = ServiceOrder::findOrFail($id);
-        
-        // Apenas Admin ou o dono da OS pode editar (ou adicione sua regra de técnico aqui)
-        if (!auth()->user()->is_admin && $os->user_id !== auth()->id()) {
-            return response()->json(['message' => 'Não autorizado'], 403);
-        }
-
-        $os->update($request->only(['status', 'technician_notes']));
-        
-        // Se o status mudar para in_progress, gravamos quem assumiu
-        if ($request->status === 'in_progress') {
-            $os->update(['technician_id' => auth()->id()]);
-        }
-
-        return response()->json($os);
+public function update(Request $request, $id)
+{
+    $os = ServiceOrder::findOrFail($id);
+    
+    // Regra: Admin ou o próprio dono podem atualizar
+    if (!auth()->user()->is_admin && $os->user_id !== auth()->id()) {
+        return response()->json(['message' => 'Não autorizado'], 403);
     }
+
+    // Atualiza apenas o status (já que technician_notes não está no fillable do seu Model)
+    if ($request->has('status')) {
+        $os->status = $request->status;
+    }
+
+    // Se iniciar o atendimento, registra o técnico
+    if ($request->status === 'in_progress') {
+        $os->technician_id = auth()->id();
+    }
+
+    $os->save();
+    return response()->json($os);
+}
 }
