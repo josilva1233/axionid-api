@@ -137,4 +137,15 @@ public function update(Request $request, $id)
     $os->save();
     return response()->json($os);
 }
+
+public function show($id)
+{
+    $order = ServiceOrder::with(['user', 'group', 'technician'])->find($id);
+
+    if (!$order) {
+        return response()->json(['message' => 'Ordem de serviço não encontrada'], 404);
+    }
+
+    return response()->json($order);
+}
 }

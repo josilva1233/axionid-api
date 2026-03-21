@@ -57,6 +57,7 @@ Route::prefix('v1')->group(function () {
          Route::prefix('service-orders')->group(function () {
             Route::get('/', [ServiceOrderController::class, 'index']);
             Route::post('/', [ServiceOrderController::class, 'store']);
+            Route::get('/{id}', [ServiceOrderController::class, 'show']);
             Route::patch('/{id}', [ServiceOrderController::class, 'update']);
         });
         // --- Módulo Administrativo (Super Admin) ---
