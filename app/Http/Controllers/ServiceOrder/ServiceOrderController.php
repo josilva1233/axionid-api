@@ -20,25 +20,49 @@ class ServiceOrderController extends Controller
         description: 'Retorna as OSs vinculadas ao usuário, ao seu grupo ou todas se for admin.',
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                description: 'Número da página',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 1)
+            ),
+            new OA\Parameter(
+                name: 'per_page',
+                in: 'query',
+                description: 'Itens por página',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 10)
+            )
+        ],
         responses: [
             new OA\Response(response: 200, description: 'Lista de OS recuperada com sucesso'),
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
-    public function index()
+    public function index(Request $request)
     {
         $user = auth()->user();
         
+        // Define o número de itens por página (padrão 10)
+        $perPage = $request->input('per_page', 10);
+        
+        $query = ServiceOrder::with(['user', 'group', 'technician'])->latest();
+        
         if ($user->is_admin) {
-            return ServiceOrder::with(['user', 'group'])->latest()->get();
+            // Admin vê todas as OS
+            $orders = $query->paginate($perPage);
+        } else {
+            // Usuário comum vê apenas suas OS ou do seu grupo
+            $groupIds = $user->groups->pluck('id');
+            $orders = $query->where(function($q) use ($user, $groupIds) {
+                $q->where('user_id', $user->id)
+                  ->orWhereIn('group_id', $groupIds);
+            })->paginate($perPage);
         }
 
-        $groupIds = $user->groups->pluck('id');
-        return ServiceOrder::where('user_id', $user->id)
-            ->orWhereIn('group_id', $groupIds)
-            ->with(['user', 'group'])
-            ->latest()
-            ->get();
+        return response()->json($orders);
     }
 
     #[OA\Post(
@@ -115,37 +139,37 @@ class ServiceOrderController extends Controller
             new OA\Response(response: 403, description: 'Sem permissão')
         ]
     )]
-public function update(Request $request, $id)
-{
-    $os = ServiceOrder::findOrFail($id);
-    
-    // Regra: Admin ou o próprio dono podem atualizar
-    if (!auth()->user()->is_admin && $os->user_id !== auth()->id()) {
-        return response()->json(['message' => 'Não autorizado'], 403);
+    public function update(Request $request, $id)
+    {
+        $os = ServiceOrder::findOrFail($id);
+        
+        // Regra: Admin ou o próprio dono podem atualizar
+        if (!auth()->user()->is_admin && $os->user_id !== auth()->id()) {
+            return response()->json(['message' => 'Não autorizado'], 403);
+        }
+
+        // Atualiza apenas o status
+        if ($request->has('status')) {
+            $os->status = $request->status;
+        }
+
+        // Se iniciar o atendimento, registra o técnico
+        if ($request->status === 'in_progress') {
+            $os->technician_id = auth()->id();
+        }
+
+        $os->save();
+        return response()->json($os);
     }
 
-    // Atualiza apenas o status (já que technician_notes não está no fillable do seu Model)
-    if ($request->has('status')) {
-        $os->status = $request->status;
+    public function show($id)
+    {
+        $order = ServiceOrder::with(['user', 'group', 'technician'])->find($id);
+
+        if (!$order) {
+            return response()->json(['message' => 'Ordem de serviço não encontrada'], 404);
+        }
+
+        return response()->json($order);
     }
-
-    // Se iniciar o atendimento, registra o técnico
-    if ($request->status === 'in_progress') {
-        $os->technician_id = auth()->id();
-    }
-
-    $os->save();
-    return response()->json($os);
-}
-
-public function show($id)
-{
-    $order = ServiceOrder::with(['user', 'group', 'technician'])->find($id);
-
-    if (!$order) {
-        return response()->json(['message' => 'Ordem de serviço não encontrada'], 404);
-    }
-
-    return response()->json($order);
-}
 }
