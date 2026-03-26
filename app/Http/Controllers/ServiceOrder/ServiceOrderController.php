@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Laravel\Socialite\Facades\Socialite;
 use App\Models\ServiceOrder;
 use OpenApi\Attributes as OA;
+use Illuminate\Support\Facades\Storage;
 
 class ServiceOrderController extends Controller
 {
@@ -45,16 +46,13 @@ class ServiceOrderController extends Controller
     {
         $user = auth()->user();
         
-        // Define o número de itens por página (padrão 10)
         $perPage = $request->input('per_page', 10);
         
         $query = ServiceOrder::with(['user', 'group', 'technician'])->latest();
         
         if ($user->is_admin) {
-            // Admin vê todas as OS
             $orders = $query->paginate($perPage);
         } else {
-            // Usuário comum vê apenas suas OS ou do seu grupo
             $groupIds = $user->groups->pluck('id');
             $orders = $query->where(function($q) use ($user, $groupIds) {
                 $q->where('user_id', $user->id)
@@ -143,17 +141,14 @@ class ServiceOrderController extends Controller
     {
         $os = ServiceOrder::findOrFail($id);
         
-        // Regra: Admin ou o próprio dono podem atualizar
         if (!auth()->user()->is_admin && $os->user_id !== auth()->id()) {
             return response()->json(['message' => 'Não autorizado'], 403);
         }
 
-        // Atualiza apenas o status
         if ($request->has('status')) {
             $os->status = $request->status;
         }
 
-        // Se iniciar o atendimento, registra o técnico
         if ($request->status === 'in_progress') {
             $os->technician_id = auth()->id();
         }
@@ -171,5 +166,39 @@ class ServiceOrderController extends Controller
         }
 
         return response()->json($order);
+    }
+
+    #[OA\Delete(
+        path: '/api/v1/service-orders/{id}',
+        summary: 'Excluir Ordem de Serviço',
+        description: 'Remove permanentemente uma OS. Apenas administradores podem excluir.',
+        tags: ['Ordens de Serviço'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'OS excluída com sucesso'),
+            new OA\Response(response: 403, description: 'Sem permissão'),
+            new OA\Response(response: 404, description: 'OS não encontrada')
+        ]
+    )]
+    public function destroy($id)
+    {
+        $order = ServiceOrder::findOrFail($id);
+        
+        // Apenas admin pode excluir
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Apenas administradores podem excluir ordens de serviço.'], 403);
+        }
+        
+        // Remove o anexo se existir
+        if ($order->attachment_path) {
+            Storage::disk('public')->delete($order->attachment_path);
+        }
+        
+        $order->delete();
+        
+        return response()->json(['message' => 'Ordem de serviço excluída com sucesso.'], 200);
     }
 }
