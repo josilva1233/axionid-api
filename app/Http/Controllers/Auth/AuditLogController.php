@@ -47,25 +47,41 @@ class AuditLogController extends Controller
             new OA\Response(response: 403, description: 'Acesso negado')
         ]
     )]
-    public function index(Request $request)
-    {
-        if (!Auth::user()->is_admin) {
-            return response()->json(['message' => 'Acesso negado.'], 403);
-        }
-
-        // Usando o Model AuditLog (mais limpo que o DB::table)
-        $query = AuditLog::with('user:id,name,email');
-
-        if ($request->filled('method')) {
-            $query->where('method', strtoupper($request->method));
-        }
-
-        if ($request->filled('date')) {
-            $query->whereDate('created_at', $request->date);
-        }
-
-        return response()->json(
-            $query->orderBy('created_at', 'desc')->paginate(20)
-        );
+public function index(Request $request)
+{
+    if (!Auth::user()->is_admin) {
+        return response()->json(['message' => 'Acesso negado.'], 403);
     }
+
+    $query = AuditLog::with('user:id,name,email');
+
+    // Filtros
+    if ($request->filled('user')) {
+        $search = $request->user;
+        $query->whereHas('user', function ($q) use ($search) {
+            $q->where('name', 'LIKE', "%{$search}%")
+              ->orWhere('email', 'LIKE', "%{$search}%");
+        });
+    }
+
+    if ($request->filled('url')) {
+        $query->where('url', 'LIKE', "%{$request->url}%");
+    }
+
+    if ($request->filled('method')) {
+        $query->where('method', strtoupper($request->method));
+    }
+
+    if ($request->filled('start_date')) {
+        $query->whereDate('created_at', '>=', $request->start_date);
+    }
+
+    if ($request->filled('end_date')) {
+        $query->whereDate('created_at', '<=', $request->end_date);
+    }
+
+    return response()->json(
+        $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 20)
+    );
+}
 }
