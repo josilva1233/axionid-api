@@ -94,14 +94,21 @@ class AxionAuthController extends Controller
     )]
 public function login(Request $request)
 {
-    // 1. Validação dos dados
+    // =========================================================
+    // 1. VALIDAÇÃO DOS DADOS
+    // =========================================================
+
     $validated = $request->validate([
-        'username'     => 'required|string',
-        'password'     => 'required|string',
+        'username'      => 'required|string',
+        'password'      => 'required|string',
         'captcha_token' => 'required|string',
     ]);
 
-    // 2. Verificação do reCAPTCHA
+
+    // =========================================================
+    // 2. VERIFICAÇÃO DO reCAPTCHA
+    // =========================================================
+
     $captchaResponse = Http::asForm()->post(
         'https://www.google.com/recaptcha/api/siteverify',
         [
@@ -111,8 +118,10 @@ public function login(Request $request)
         ]
     );
 
-    // Verifica se o Google respondeu corretamente
+
+    // Verifica se houve erro na comunicação com o Google
     if (!$captchaResponse->successful()) {
+
         \Log::error('Erro HTTP ao consultar Google reCAPTCHA', [
             'status' => $captchaResponse->status(),
             'body'   => $captchaResponse->body(),
@@ -123,14 +132,19 @@ public function login(Request $request)
         ], 422);
     }
 
+
+    // =========================================================
+    // 3. VERIFICA SE O reCAPTCHA É VÁLIDO
+    // =========================================================
+
     $captchaData = $captchaResponse->json();
 
-    // 3. CAPTCHA inválido
     if (!($captchaData['success'] ?? false)) {
+
         \Log::error('Falha no reCAPTCHA AxionID', [
-            'erros' => $captchaData['error-codes'] ?? [],
+            'erros'    => $captchaData['error-codes'] ?? [],
             'hostname' => $captchaData['hostname'] ?? null,
-            'ip' => $request->ip(),
+            'ip'       => $request->ip(),
         ]);
 
         return response()->json([
@@ -139,43 +153,90 @@ public function login(Request $request)
         ], 422);
     }
 
-    // 4. Localiza usuário pelo CPF/CNPJ
-    $loginIdentifier = preg_replace(
-        '/[^0-9]/',
-        '',
-        $validated['username']
-    );
 
-    $user = User::where('cpf_cnpj', $loginIdentifier)->first();
+    // =========================================================
+    // 4. IDENTIFICA SE É CPF/CNPJ OU E-MAIL
+    // =========================================================
 
-    // 5. Verifica credenciais
+    $login = trim($validated['username']);
+
+    // Remove pontos, traços, barras e outros caracteres
+    // Exemplo:
+    // 123.456.789-00 -> 12345678900
+    // 12.345.678/0001-90 -> 12345678000190
+    $document = preg_replace('/[^0-9]/', '', $login);
+
+
+    // =========================================================
+    // 5. PROCURA O USUÁRIO
+    // =========================================================
+
+    if (
+        ctype_digit($document) &&
+        (strlen($document) === 11 || strlen($document) === 14)
+    ) {
+
+        // CPF ou CNPJ
+        $user = User::where('cpf_cnpj', $document)->first();
+
+    } else {
+
+        // E-mail
+        $user = User::whereRaw(
+            'LOWER(email) = ?',
+            [strtolower($login)]
+        )->first();
+    }
+
+
+    // =========================================================
+    // 6. VERIFICA CPF/E-MAIL E SENHA
+    // =========================================================
+
     if (!$user || !Hash::check($validated['password'], $user->password)) {
+
         return response()->json([
-            'message' => 'Credenciais inválidas.'
+            'message' => 'CPF/e-mail ou senha inválidos.'
         ], 401);
     }
 
-    // 6. Verifica se a conta está ativa
+
+    // =========================================================
+    // 7. VERIFICA SE A CONTA ESTÁ ATIVA
+    // =========================================================
+
     if (!$user->is_active) {
+
         return response()->json([
             'message' => 'Esta conta foi suspensa por um administrador.'
         ], 403);
     }
 
-    // 7. Remove tokens anteriores
+
+    // =========================================================
+    // 8. REMOVE TOKENS ANTERIORES
+    // =========================================================
+
     $user->tokens()->delete();
 
-    // 8. Cria novo token
+
+    // =========================================================
+    // 9. CRIA NOVO TOKEN
+    // =========================================================
+
     $token = $user->createToken('axion_token')->plainTextToken;
 
-    // 9. Retorna resultado
-    return response()->json([
-        'token' => $token,
-        'profile_completed' => $user->profile_completed,
-        'user' => $user
-    ]);
-}
 
+    // =========================================================
+    // 10. RETORNA RESULTADO
+    // =========================================================
+
+    return response()->json([
+        'token'             => $token,
+        'profile_completed' => $user->profile_completed,
+        'user'              => $user
+    ], 200);
+}
     #[OA\Post(
         path: '/api/v1/complete-profile',
         summary: '3. Completar Cadastro (Etapa 2 - Endereço)',
