@@ -43,7 +43,6 @@ class PermissionController extends Controller
         $user = User::findOrFail($id);
         $role = Role::where('name', $request->role_name)->firstOrFail();
 
-        // syncWithoutDetaching garante que o usuário ganhe o cargo sem perder os que já tinha
         $user->roles()->syncWithoutDetaching([$role->id]);
 
         return response()->json([
@@ -51,22 +50,84 @@ class PermissionController extends Controller
         ]);
     }
 
+    // =========================================================
+    // LISTAR PERMISSÕES COM FILTROS - CORRIGIDO
+    // =========================================================
     #[OA\Get(
-        path: '/api/v1/permissions',
-        summary: 'Listar todas as permissões',
+        path: '/api/v1/admin/permissions',
+        summary: 'Listar todas as permissões com filtros',
         tags: ['Administração - Permissões'],
         security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'label',
+                in: 'query',
+                description: 'Filtrar por label (nome exibido)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'Criar')
+            ),
+            new OA\Parameter(
+                name: 'name',
+                in: 'query',
+                description: 'Filtrar por name (chave do sistema)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'users.create')
+            ),
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                description: 'Número da página',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 1)
+            ),
+            new OA\Parameter(
+                name: 'per_page',
+                in: 'query',
+                description: 'Itens por página',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 10)
+            )
+        ],
         responses: [
-            new OA\Response(response: 200, description: 'Lista de permissões')
+            new OA\Response(response: 200, description: 'Lista de permissões filtrada'),
+            new OA\Response(response: 403, description: 'Acesso negado')
         ]
     )]
-    public function listPermissions()
+    public function listPermissions(Request $request) // ← ADICIONADO Request $request
     {
-        return response()->json(Permission::all());
+        // Verifica se é admin
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        $query = Permission::query();
+
+        // =========================================================
+        // FILTROS QUE O FRONTEND ENVIA
+        // =========================================================
+        
+        // 1. Filtrar por label (nome exibido)
+        if ($request->filled('label')) {
+            $query->where('label', 'LIKE', "%{$request->label}%");
+        }
+
+        // 2. Filtrar por name (chave do sistema)
+        if ($request->filled('name')) {
+            $query->where('name', 'LIKE', "%{$request->name}%");
+        }
+
+        // 3. Paginação
+        $perPage = $request->per_page ?? 10;
+        $permissions = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        return response()->json($permissions);
     }
 
+    // =========================================================
+    // CRIAR PERMISSÃO
+    // =========================================================
     #[OA\Post(
-        path: '/api/v1/permissions',
+        path: '/api/v1/admin/permissions',
         summary: 'Criar uma nova permissão',
         tags: ['Administração - Permissões'],
         security: [['sanctum' => []]],
@@ -86,6 +147,10 @@ class PermissionController extends Controller
     )]
     public function storePermission(Request $request)
     {
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
         $validated = $request->validate([
             'name' => 'required|unique:permissions|max:255',
             'label' => 'required|max:255',
@@ -95,34 +160,41 @@ class PermissionController extends Controller
         return response()->json($permission, 201);
     }
 
-public function attachPermissionToRole(Request $request, $groupId)
-{
-    // 1. Localiza o Grupo (ou explode 404 se não achar)
-    $group = \App\Models\Group::findOrFail($groupId);
-    
-    // 2. Localiza a Permissão pelo nome enviado
-    $permission = \App\Models\Permission::where('name', $request->permission_name)->firstOrFail();
+    // =========================================================
+    // VINCULAR PERMISSÃO AO GRUPO
+    // =========================================================
+    public function attachPermissionToRole(Request $request, $groupId)
+    {
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
 
-    // 3. REGRA: Verifica se esse grupo já tem essa permissão específica
-    if ($group->permissions()->where('permission_id', $permission->id)->exists()) {
+        $group = \App\Models\Group::findOrFail($groupId);
+        $permission = Permission::where('name', $request->permission_name)->firstOrFail();
+
+        if ($group->permissions()->where('permission_id', $permission->id)->exists()) {
+            return response()->json([
+                'message' => "Esta chave de permissão já está vinculada a este grupo."
+            ], 422);
+        }
+
+        $group->permissions()->syncWithoutDetaching([$permission->id]);
+
         return response()->json([
-            'message' => "Esta chave de permissão já está vinculada a este grupo."
-        ], 422); // Status 422: Unprocessable Entity (Erro de regra de negócio)
+            'message' => "Permissão '{$permission->label}' vinculada com sucesso!"
+        ]);
     }
 
-    // 4. Se não existe, vincula
-    $group->permissions()->syncWithoutDetaching([$permission->id]);
-
-    return response()->json([
-        'message' => "Permissão '{$permission->label}' vinculada com sucesso!"
-    ]);
-}
-    // Remover permissão do grupo
+    // =========================================================
+    // REMOVER PERMISSÃO DO GRUPO
+    // =========================================================
     public function detachPermissionFromRole($groupId, $permissionId)
     {
-        // Alterado de Role para Group
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
         $group = \App\Models\Group::findOrFail($groupId);
-        
         $group->permissions()->detach($permissionId);
 
         return response()->json(['message' => 'Permissão removida com sucesso.']);
