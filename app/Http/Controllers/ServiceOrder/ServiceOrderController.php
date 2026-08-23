@@ -15,10 +15,10 @@ use Illuminate\Support\Facades\Storage;
 
 class ServiceOrderController extends Controller
 {
-    #[OA\Get(
+#[OA\Get(
         path: '/api/v1/service-orders',
         summary: 'Listar Ordens de Serviço',
-        description: 'Retorna as OSs vinculadas ao usuário, ao seu grupo ou todas se for admin.',
+        description: 'Retorna as OSs vinculadas ao usuário, ao seu grupo ou todas se for admin, permitindo filtros opcionais.',
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         parameters: [
@@ -35,6 +35,41 @@ class ServiceOrderController extends Controller
                 description: 'Itens por página',
                 required: false,
                 schema: new OA\Schema(type: 'integer', example: 10)
+            ),
+            new OA\Parameter(
+                name: 'protocol',
+                in: 'query',
+                description: 'Filtrar por protocolo (parcial)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'OS-2026')
+            ),
+            new OA\Parameter(
+                name: 'title',
+                in: 'query',
+                description: 'Filtrar por título/assunto (parcial)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'Erro no sistema')
+            ),
+            new OA\Parameter(
+                name: 'applicant',
+                in: 'query',
+                description: 'Filtrar por nome do solicitante',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'Luana')
+            ),
+            new OA\Parameter(
+                name: 'priority',
+                in: 'query',
+                description: 'Filtrar por prioridade',
+                required: false,
+                schema: new OA\Schema(type: 'string', enum: ['low', 'medium', 'high', 'urgent'])
+            ),
+            new OA\Parameter(
+                name: 'status',
+                in: 'query',
+                description: 'Filtrar por status',
+                required: false,
+                schema: new OA\Schema(type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'])
             )
         ],
         responses: [
@@ -42,26 +77,51 @@ class ServiceOrderController extends Controller
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
-    public function index(Request $request)
-    {
-        $user = auth()->user();
-        
-        $perPage = $request->input('per_page', 10);
-        
-        $query = ServiceOrder::with(['user', 'group', 'technician'])->latest();
-        
-        if ($user->is_admin) {
-            $orders = $query->paginate($perPage);
-        } else {
-            $groupIds = $user->groups->pluck('id');
-            $orders = $query->where(function($q) use ($user, $groupIds) {
-                $q->where('user_id', $user->id)
-                  ->orWhereIn('group_id', $groupIds);
-            })->paginate($perPage);
-        }
-
-        return response()->json($orders);
+public function index(Request $request)
+{
+    $user = auth()->user();
+    $perPage = $request->input('per_page', 10);
+    
+    // Incluímos 'user' na listagem para poder filtrar pelo nome do solicitante se necessário
+    $query = ServiceOrder::with(['user', 'group', 'technician'])->latest();
+    
+    // --- FILTROS DINÂMICOS ---
+    if ($request->filled('protocol')) {
+        $query->where('protocol', 'like', '%' . $request->protocol . '%');
     }
+
+    if ($request->filled('title')) {
+        $query->where('title', 'like', '%' . $request->title . '%');
+    }
+
+    if ($request->filled('applicant') || $request->filled('solicitante')) {
+        $search = $request->input('applicant', $request->input('solicitante'));
+        $query->whereHas('user', function($q) use ($search) {
+            $q->where('name', 'like', '%' . $search . '%');
+        });
+    }
+
+    if ($request->filled('priority')) {
+        $query->where('priority', $request->priority);
+    }
+
+    if ($request->filled('status')) {
+        $query->where('status', $request->status);
+    }
+    // -------------------------
+
+    if ($user->is_admin) {
+        $orders = $query->paginate($perPage);
+    } else {
+        $groupIds = $user->groups->pluck('id');
+        $orders = $query->where(function($q) use ($user, $groupIds) {
+            $q->where('user_id', $user->id)
+              ->orWhereIn('group_id', $groupIds);
+        })->paginate($perPage);
+    }
+
+    return response()->json($orders);
+}
 
     #[OA\Post(
         path: '/api/v1/service-orders',
