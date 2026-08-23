@@ -51,7 +51,7 @@ class PermissionController extends Controller
     }
 
     // =========================================================
-    // LISTAR PERMISSÕES COM FILTROS - CORRIGIDO
+    // LISTAR PERMISSÕES COM FILTROS
     // =========================================================
     #[OA\Get(
         path: '/api/v1/admin/permissions',
@@ -93,34 +93,57 @@ class PermissionController extends Controller
             new OA\Response(response: 403, description: 'Acesso negado')
         ]
     )]
-    public function listPermissions(Request $request) // ← ADICIONADO Request $request
+    public function listPermissions(Request $request)
     {
-        // Verifica se é admin
         if (!auth()->user()->is_admin) {
             return response()->json(['message' => 'Acesso negado.'], 403);
         }
 
         $query = Permission::query();
 
-        // =========================================================
-        // FILTROS QUE O FRONTEND ENVIA
-        // =========================================================
-        
-        // 1. Filtrar por label (nome exibido)
         if ($request->filled('label')) {
             $query->where('label', 'LIKE', "%{$request->label}%");
         }
 
-        // 2. Filtrar por name (chave do sistema)
         if ($request->filled('name')) {
             $query->where('name', 'LIKE', "%{$request->name}%");
         }
 
-        // 3. Paginação
         $perPage = $request->per_page ?? 10;
         $permissions = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return response()->json($permissions);
+    }
+
+    // =========================================================
+    // BUSCAR UMA PERMISSÃO ESPECÍFICA (DETALHES)
+    // =========================================================
+    #[OA\Get(
+        path: '/api/v1/admin/permissions/{id}',
+        summary: 'Buscar uma permissão específica',
+        tags: ['Administração - Permissões'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Dados da permissão'),
+            new OA\Response(response: 404, description: 'Permissão não encontrada')
+        ]
+    )]
+    public function showPermission($id)
+    {
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        $permission = Permission::find($id);
+
+        if (!$permission) {
+            return response()->json(['message' => 'Permissão não encontrada.'], 404);
+        }
+
+        return response()->json($permission);
     }
 
     // =========================================================
@@ -154,10 +177,105 @@ class PermissionController extends Controller
         $validated = $request->validate([
             'name' => 'required|unique:permissions|max:255',
             'label' => 'required|max:255',
+            'description' => 'nullable|string',
         ]);
 
         $permission = Permission::create($validated);
         return response()->json($permission, 201);
+    }
+
+    // =========================================================
+    // ATUALIZAR PERMISSÃO
+    // =========================================================
+    #[OA\Put(
+        path: '/api/v1/admin/permissions/{id}',
+        summary: 'Atualizar uma permissão',
+        tags: ['Administração - Permissões'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', example: 'users.delete'),
+                    new OA\Property(property: 'label', type: 'string', example: 'Excluir Usuários'),
+                    new OA\Property(property: 'description', type: 'string', example: 'Permite excluir usuários do sistema')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Permissão atualizada'),
+            new OA\Response(response: 404, description: 'Permissão não encontrada'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
+    )]
+    public function updatePermission(Request $request, $id)
+    {
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        $permission = Permission::find($id);
+
+        if (!$permission) {
+            return response()->json(['message' => 'Permissão não encontrada.'], 404);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|unique:permissions,name,' . $id . '|max:255',
+            'label' => 'required|max:255',
+            'description' => 'nullable|string',
+        ]);
+
+        $permission->update($validated);
+
+        return response()->json($permission);
+    }
+
+    // =========================================================
+    // EXCLUIR PERMISSÃO
+    // =========================================================
+    #[OA\Delete(
+        path: '/api/v1/admin/permissions/{id}',
+        summary: 'Excluir uma permissão',
+        tags: ['Administração - Permissões'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Permissão excluída'),
+            new OA\Response(response: 404, description: 'Permissão não encontrada'),
+            new OA\Response(response: 422, description: 'Permissão vinculada a grupos')
+        ]
+    )]
+    public function deletePermission($id)
+    {
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        $permission = Permission::find($id);
+
+        if (!$permission) {
+            return response()->json(['message' => 'Permissão não encontrada.'], 404);
+        }
+
+        // Verificar se a permissão está vinculada a algum grupo
+        $hasGroups = $permission->groups()->count() > 0;
+        
+        if ($hasGroups) {
+            return response()->json([
+                'message' => 'Não é possível excluir esta permissão pois ela está vinculada a um ou mais grupos.',
+                'groups' => $permission->groups()->pluck('name')
+            ], 422);
+        }
+
+        $permission->delete();
+
+        return response()->json(['message' => 'Permissão excluída com sucesso.']);
     }
 
     // =========================================================
