@@ -12,6 +12,7 @@ class Permission extends Model
     protected $fillable = [
         'name',  // ex: 'users.delete'
         'label', // ex: 'Excluir Usuários'
+        'description' // ex: 'Permite que o usuário exclua outros usuários do sistema'
     ];
 
     /**

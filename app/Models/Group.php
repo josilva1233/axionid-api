@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class Group extends Model
 {
     // 1. Permite preencher o name e o creator_id
-    protected $fillable = ['name', 'creator_id'];
+    protected $fillable = ['name', 'creator_id', 'description'];
 
     // 2. Relação com usuários (N para N)
     public function users()

@@ -11,7 +11,8 @@ return new class extends Migration
         Schema::create('permissions', function (Blueprint $table) {
             $table->id();
             $table->string('name')->unique(); // ex: 'users.delete', 'groups.edit'
-            $table->string('label');           // ex: 'Excluir Usuários', 'Editar Grupos'
+            $table->string('label');    // ex: 'Excluir Usuários', 'Editar Grupos'
+            $table->text('description')->nullable(); // ex: 'Permite que o usuário exclua outros usuários do sistema'
             $table->timestamps();
         });
     }

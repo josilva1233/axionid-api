@@ -15,6 +15,7 @@ public function up(): void
         $table->id();
         $table->string('name'); // Adicionado
         $table->foreignId('creator_id')->constrained('users')->onDelete('cascade'); // Adicionado
+        $table->text('description')->nullable(); // Adicionado
         $table->timestamps();
     });
 }
