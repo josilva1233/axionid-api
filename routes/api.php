@@ -61,6 +61,14 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}', [ServiceOrderController::class, 'destroy']); 
         });
 
+            // --- ROTAS DE MENSAGENS (aninhadas) ---
+    Route::prefix('{serviceOrderId}/messages')->group(function () {
+        Route::get('/', [ServiceOrderMessageController::class, 'index']);
+        Route::post('/', [ServiceOrderMessageController::class, 'store']);
+        Route::put('/{messageId}', [ServiceOrderMessageController::class, 'update']);
+        Route::delete('/{messageId}', [ServiceOrderMessageController::class, 'destroy']);
+    });
+
         // =========================================================
         // --- Módulo Administrativo (Super Admin) ---
         // =========================================================

@@ -27,4 +27,13 @@ class ServiceOrder extends Model
     public function technician(): BelongsTo {
         return $this->belongsTo(User::class, 'technician_id');
     }
+
+    // Mensagens associadas à OS
+    public function messages(): HasMany
+   {
+    return $this->hasMany(ServiceOrderMessage::class)->latest();
+    }
+
+
+    
 }
