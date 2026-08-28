@@ -1,142 +1,150 @@
 <?php
 
-namespace App\Http\Controllers\ServiceOrder;
+namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\ServiceOrder;
-use App\Models\ServiceOrderMessage;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use OpenApi\Attributes as OA;
 
-class ServiceOrderMessageController extends Controller
+class AuditLogController extends Controller
 {
-    // ... (index mantido igual)
-
-    public function store(Request $request, $serviceOrderId)
+    #[OA\Get(
+        path: '/api/v1/admin/audit-logs',
+        summary: 'Listar logs de auditoria',
+        description: 'Retorna os logs de auditoria com filtros opcionais. Apenas administradores podem acessar.',
+        tags: ['Auditoria'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                description: 'Número da página',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 1)
+            ),
+            new OA\Parameter(
+                name: 'per_page',
+                in: 'query',
+                description: 'Itens por página',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 20)
+            ),
+            new OA\Parameter(
+                name: 'user',
+                in: 'query',
+                description: 'Filtrar por nome ou email do usuário',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'admin')
+            ),
+            new OA\Parameter(
+                name: 'method',
+                in: 'query',
+                description: 'Filtrar por método HTTP (GET, POST, PUT, DELETE, etc.)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'POST')
+            ),
+            new OA\Parameter(
+                name: 'url',
+                in: 'query',
+                description: 'Filtrar por URL (parcial)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: '/api/v1/users')
+            ),
+            new OA\Parameter(
+                name: 'start_date',
+                in: 'query',
+                description: 'Data inicial (YYYY-MM-DD)',
+                required: false,
+                schema: new OA\Schema(type: 'string', format: 'date', example: '2026-01-01')
+            ),
+            new OA\Parameter(
+                name: 'end_date',
+                in: 'query',
+                description: 'Data final (YYYY-MM-DD)',
+                required: false,
+                schema: new OA\Schema(type: 'string', format: 'date', example: '2026-12-31')
+            ),
+            new OA\Parameter(
+                name: 'action',
+                in: 'query',
+                description: 'Filtrar por ação (payload->action)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'message_created')
+            ),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Lista de logs recuperada com sucesso'),
+            new OA\Response(response: 403, description: 'Sem permissão (apenas admin)'),
+        ]
+    )]
+    public function index(Request $request)
     {
-        $order = ServiceOrder::findOrFail($serviceOrderId);
-        
-        $user = auth()->user();
-        $hasAccess = $user->is_admin || 
-                     $order->user_id == $user->id || 
-                     ($order->group_id && $user->groups->contains($order->group_id));
-        
-        if (!$hasAccess) {
-            return response()->json(['message' => 'Sem permissão'], 403);
+        // Verifica se o usuário é admin (reforço, pois o middleware 'admin' já deve estar aplicado)
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Apenas administradores podem acessar os logs de auditoria.'], 403);
         }
 
-        $validated = $request->validate([
-            'message' => 'required|string|max:5000',
-            'attachment' => 'nullable|file|mimes:pdf,jpg,png,doc,docx|max:5120',
-        ]);
+        $perPage = $request->input('per_page', 20);
 
-        $path = null;
-        if ($request->hasFile('attachment')) {
-            $path = $request->file('attachment')->store('message_attachments', 'public');
+        $query = AuditLog::with('user')->latest();
+
+        // Filtros
+        if ($request->filled('user')) {
+            $search = $request->input('user');
+            $query->whereHas('user', function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
         }
 
-        $message = ServiceOrderMessage::create([
-            'service_order_id' => $order->id,
-            'user_id' => $user->id,
-            'message' => $validated['message'],
-            'attachment_path' => $path,
-        ]);
+        if ($request->filled('method')) {
+            $query->where('method', $request->method);
+        }
 
-        // --- LOG DE AUDITORIA ---
-        AuditLog::create([
-            'user_id' => $user->id,
-            'method' => 'POST',
-            'url' => $request->fullUrl(),
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'payload' => [
-                'action' => 'message_created',
-                'service_order_id' => $order->id,
-                'message_id' => $message->id,
-                'message_preview' => substr($message->message, 0, 100),
-            ],
-        ]);
+        if ($request->filled('url')) {
+            $query->where('url', 'like', '%' . $request->url . '%');
+        }
 
-        return response()->json($message->load('user'), 201);
+        if ($request->filled('start_date')) {
+            $query->whereDate('created_at', '>=', $request->start_date);
+        }
+
+        if ($request->filled('end_date')) {
+            $query->whereDate('created_at', '<=', $request->end_date);
+        }
+
+        // Filtro por ação (dentro do payload JSON)
+        if ($request->filled('action')) {
+            $query->where('payload->action', $request->action);
+        }
+
+        $logs = $query->paginate($perPage);
+
+        return response()->json($logs);
     }
 
-    public function update(Request $request, $serviceOrderId, $messageId)
+    #[OA\Get(
+        path: '/api/v1/admin/audit-logs/{id}',
+        summary: 'Exibir um log de auditoria específico',
+        tags: ['Auditoria'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Log recuperado'),
+            new OA\Response(response: 403, description: 'Sem permissão'),
+            new OA\Response(response: 404, description: 'Log não encontrado')
+        ]
+    )]
+    public function show($id)
     {
-        $message = ServiceOrderMessage::where('service_order_id', $serviceOrderId)
-                                      ->findOrFail($messageId);
-        
-        $user = auth()->user();
-        if (!$user->is_admin && $message->user_id !== $user->id) {
-            return response()->json(['message' => 'Não autorizado'], 403);
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Apenas administradores podem acessar os logs de auditoria.'], 403);
         }
 
-        $validated = $request->validate([
-            'message' => 'required|string|max:5000',
-        ]);
-
-        $oldMessage = $message->message; // guarda antes de mudar
-
-        $message->message = $validated['message'];
-        $message->save();
-
-        // --- LOG DE AUDITORIA ---
-        AuditLog::create([
-            'user_id' => $user->id,
-            'method' => 'PUT',
-            'url' => $request->fullUrl(),
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'payload' => [
-                'action' => 'message_updated',
-                'service_order_id' => $serviceOrderId,
-                'message_id' => $message->id,
-                'old_message' => $oldMessage,
-                'new_message' => $message->message,
-            ],
-        ]);
-
-        return response()->json($message->load('user'));
-    }
-
-    public function destroy($serviceOrderId, $messageId)
-    {
-        $message = ServiceOrderMessage::where('service_order_id', $serviceOrderId)
-                                      ->findOrFail($messageId);
-        
-        $user = auth()->user();
-        if (!$user->is_admin && $message->user_id !== $user->id) {
-            return response()->json(['message' => 'Não autorizado'], 403);
-        }
-
-        // Guarda dados antes de deletar
-        $messageData = [
-            'message' => $message->message,
-            'attachment' => $message->attachment_path,
-        ];
-
-        if ($message->attachment_path) {
-            Storage::disk('public')->delete($message->attachment_path);
-        }
-
-        $message->delete();
-
-        // --- LOG DE AUDITORIA ---
-        AuditLog::create([
-            'user_id' => $user->id,
-            'method' => 'DELETE',
-            'url' => request()->fullUrl(),
-            'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
-            'payload' => [
-                'action' => 'message_deleted',
-                'service_order_id' => $serviceOrderId,
-                'message_id' => $messageId,
-                'deleted_message' => $messageData['message'],
-            ],
-        ]);
-
-        return response()->json(['message' => 'Mensagem removida com sucesso.']);
+        $log = AuditLog::with('user')->findOrFail($id);
+        return response()->json($log);
     }
 }
