@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\AxionGroupController;
 use App\Http\Controllers\Auth\AuditLogController;
 use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\ServiceOrder\ServiceOrderController;
+use App\Http\Controllers\ServiceOrder\ServiceOrderMessageController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
