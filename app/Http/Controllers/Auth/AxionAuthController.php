@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http; // Importado para o reCAPTCHA
+use Illuminate\Support\Facades\Http;
 use OpenApi\Attributes as OA;
 
 class AxionAuthController extends Controller
@@ -43,7 +43,7 @@ class AxionAuthController extends Controller
             'email'     => 'required|string|email|max:255|unique:users',
             'cpf_cnpj'  => 'required|string|unique:users',
             'password'  => 'required|string|min:8|confirmed',
-            'google_id' => 'nullable|string', 
+            'google_id' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -58,7 +58,7 @@ class AxionAuthController extends Controller
             'cpf_cnpj'          => $document,
             'password'          => Hash::make($request->password),
             'profile_completed' => false,
-            'google_id'         => $request->google_id, 
+            'google_id'         => $request->google_id,
             'is_active'         => true,
         ]);
 
@@ -92,151 +92,76 @@ class AxionAuthController extends Controller
             new OA\Response(response: 422, description: 'Falha no Captcha')
         ]
     )]
-public function login(Request $request)
-{
-    // =========================================================
-    // 1. VALIDAÇÃO DOS DADOS
-    // =========================================================
-
-    $validated = $request->validate([
-        'username'      => 'required|string',
-        'password'      => 'required|string',
-        'captcha_token' => 'required|string',
-    ]);
-
-
-    // =========================================================
-    // 2. VERIFICAÇÃO DO reCAPTCHA
-    // =========================================================
-
-    $captchaResponse = Http::asForm()->post(
-        'https://www.google.com/recaptcha/api/siteverify',
-        [
-            'secret'   => env('RECAPTCHA_SECRET_KEY'),
-            'response' => $validated['captcha_token'],
-            'remoteip' => $request->ip(),
-        ]
-    );
-
-
-    // Verifica se houve erro na comunicação com o Google
-    if (!$captchaResponse->successful()) {
-
-        \Log::error('Erro HTTP ao consultar Google reCAPTCHA', [
-            'status' => $captchaResponse->status(),
-            'body'   => $captchaResponse->body(),
+    public function login(Request $request)
+    {
+        $validated = $request->validate([
+            'username'      => 'required|string',
+            'password'      => 'required|string',
+            'captcha_token' => 'required|string',
         ]);
 
-        return response()->json([
-            'message' => 'Não foi possível verificar a segurança do acesso.'
-        ], 422);
-    }
+        $captchaResponse = Http::asForm()->post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            [
+                'secret'   => env('RECAPTCHA_SECRET_KEY'),
+                'response' => $validated['captcha_token'],
+                'remoteip' => $request->ip(),
+            ]
+        );
 
+        if (!$captchaResponse->successful()) {
+            \Log::error('Erro HTTP ao consultar Google reCAPTCHA', [
+                'status' => $captchaResponse->status(),
+                'body'   => $captchaResponse->body(),
+            ]);
 
-    // =========================================================
-    // 3. VERIFICA SE O reCAPTCHA É VÁLIDO
-    // =========================================================
+            return response()->json([
+                'message' => 'Não foi possível verificar a segurança do acesso.'
+            ], 422);
+        }
 
-    $captchaData = $captchaResponse->json();
+        $captchaData = $captchaResponse->json();
 
-    if (!($captchaData['success'] ?? false)) {
+        if (!($captchaData['success'] ?? false)) {
+            \Log::error('Falha no reCAPTCHA AxionID', [
+                'erros'    => $captchaData['error-codes'] ?? [],
+                'hostname' => $captchaData['hostname'] ?? null,
+                'ip'       => $request->ip(),
+            ]);
 
-        \Log::error('Falha no reCAPTCHA AxionID', [
-            'erros'    => $captchaData['error-codes'] ?? [],
-            'hostname' => $captchaData['hostname'] ?? null,
-            'ip'       => $request->ip(),
-        ]);
+            return response()->json([
+                'message' => 'Falha na verificação de segurança (Bot detectado).',
+                'debug_info' => $captchaData['error-codes'] ?? [],
+            ], 422);
+        }
 
-        return response()->json([
-            'message' => 'Falha na verificação de segurança (Bot detectado).',
-            'debug_info' => $captchaData['error-codes'] ?? [],
-        ], 422);
-    }
+        $login = trim($validated['username']);
+        $document = preg_replace('/[^0-9]/', '', $login);
 
+        if (ctype_digit($document) && (strlen($document) === 11 || strlen($document) === 14)) {
+            $user = User::where('cpf_cnpj', $document)->first();
+        } else {
+            $user = User::whereRaw('LOWER(email) = ?', [strtolower($login)])->first();
+        }
 
-    // =========================================================
-    // 4. IDENTIFICA SE É CPF/CNPJ OU E-MAIL
-    // =========================================================
+        if (!$user || !Hash::check($validated['password'], $user->password)) {
+            return response()->json(['message' => 'CPF/e-mail ou senha inválidos.'], 401);
+        }
 
-    $login = trim($validated['username']);
+        if (!$user->is_active) {
+            return response()->json(['message' => 'Esta conta foi suspensa por um administrador.'], 403);
+        }
 
-    // Remove pontos, traços, barras e outros caracteres
-    // Exemplo:
-    // 123.456.789-00 -> 12345678900
-    // 12.345.678/0001-90 -> 12345678000190
-    $document = preg_replace('/[^0-9]/', '', $login);
-
-
-    // =========================================================
-    // 5. PROCURA O USUÁRIO
-    // =========================================================
-
-    if (
-        ctype_digit($document) &&
-        (strlen($document) === 11 || strlen($document) === 14)
-    ) {
-
-        // CPF ou CNPJ
-        $user = User::where('cpf_cnpj', $document)->first();
-
-    } else {
-
-        // E-mail
-        $user = User::whereRaw(
-            'LOWER(email) = ?',
-            [strtolower($login)]
-        )->first();
-    }
-
-
-    // =========================================================
-    // 6. VERIFICA CPF/E-MAIL E SENHA
-    // =========================================================
-
-    if (!$user || !Hash::check($validated['password'], $user->password)) {
+        $user->tokens()->delete();
+        $token = $user->createToken('axion_token')->plainTextToken;
 
         return response()->json([
-            'message' => 'CPF/e-mail ou senha inválidos.'
-        ], 401);
+            'token'             => $token,
+            'profile_completed' => $user->profile_completed,
+            'user'              => $user
+        ], 200);
     }
 
-
-    // =========================================================
-    // 7. VERIFICA SE A CONTA ESTÁ ATIVA
-    // =========================================================
-
-    if (!$user->is_active) {
-
-        return response()->json([
-            'message' => 'Esta conta foi suspensa por um administrador.'
-        ], 403);
-    }
-
-
-    // =========================================================
-    // 8. REMOVE TOKENS ANTERIORES
-    // =========================================================
-
-    $user->tokens()->delete();
-
-
-    // =========================================================
-    // 9. CRIA NOVO TOKEN
-    // =========================================================
-
-    $token = $user->createToken('axion_token')->plainTextToken;
-
-
-    // =========================================================
-    // 10. RETORNA RESULTADO
-    // =========================================================
-
-    return response()->json([
-        'token'             => $token,
-        'profile_completed' => $user->profile_completed,
-        'user'              => $user
-    ], 200);
-}
     #[OA\Post(
         path: '/api/v1/complete-profile',
         summary: '3. Completar Cadastro (Etapa 2 - Endereço)',
@@ -282,6 +207,72 @@ public function login(Request $request)
         $user->update(['profile_completed' => true, 'email_verified_at' => now()]);
 
         return response()->json(['message' => 'Cadastro finalizado!', 'user' => $user->load('address')]);
+    }
+
+    /**
+     * =========================================================
+     * MÉTODO ADICIONADO: Atualizar perfil do usuário logado
+     * =========================================================
+     */
+    #[OA\Put(
+        path: '/api/v1/update-profile',
+        summary: 'Atualizar perfil do usuário autenticado',
+        tags: ['Perfil'],
+        security: [['sanctum' => []]],
+        requestBody: new OA\RequestBody(
+            required: false,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', example: 'João Silva Atualizado'),
+                    new OA\Property(property: 'email', type: 'string', example: 'novoemail@email.com'),
+                    new OA\Property(property: 'cpf_cnpj', type: 'string', example: '12345678901'),
+                    new OA\Property(property: 'zip_code', type: 'string', example: '01001000'),
+                    new OA\Property(property: 'street', type: 'string', example: 'Rua Exemplo'),
+                    new OA\Property(property: 'number', type: 'string', example: '123'),
+                    new OA\Property(property: 'neighborhood', type: 'string', example: 'Bairro Centro'),
+                    new OA\Property(property: 'city', type: 'string', example: 'São Paulo'),
+                    new OA\Property(property: 'state', type: 'string', example: 'SP'),
+                    new OA\Property(property: 'complement', type: 'string', example: 'Apto 1', nullable: true)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Perfil atualizado com sucesso'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
+    )]
+    public function updateProfile(Request $request)
+    {
+        $user = Auth::user();
+
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|unique:users,email,' . $user->id,
+            'cpf_cnpj' => 'sometimes|string|max:20',
+            'zip_code' => 'nullable|string|max:10',
+            'street' => 'nullable|string|max:255',
+            'number' => 'nullable|string|max:20',
+            'neighborhood' => 'nullable|string|max:100',
+            'city' => 'nullable|string|max:100',
+            'state' => 'nullable|string|max:2',
+            'complement' => 'nullable|string|max:255',
+        ]);
+
+        // Atualiza dados do usuário
+        $user->update($validated);
+
+        // Atualiza ou cria endereço
+        $addressData = $request->only([
+            'zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'
+        ]);
+
+        if ($user->address) {
+            $user->address->update($addressData);
+        } else {
+            $user->address()->create($addressData);
+        }
+
+        return response()->json($user->load('address'));
     }
 
     #[OA\Get(
@@ -330,7 +321,7 @@ public function login(Request $request)
         ),
         responses: [
             new OA\Response(
-                response: 200, 
+                response: 200,
                 description: 'Sucesso',
                 content: new OA\JsonContent(
                     properties: [
@@ -381,14 +372,14 @@ public function login(Request $request)
             )
         );
 
-return response()->json([
-    'message' => 'Usuário atualizado com sucesso pelo administrador',
-    'user' => $user->load('address'), // Isso garante que o endereço atualizado volte para o React
-    'admin_info' => [
-        'admin_id' => $admin->id,
-        'updated_at' => now()->toDateTimeString()
-    ]
-]);
+        return response()->json([
+            'message' => 'Usuário atualizado com sucesso pelo administrador',
+            'user' => $user->load('address'),
+            'admin_info' => [
+                'admin_id' => $admin->id,
+                'updated_at' => now()->toDateTimeString()
+            ]
+        ]);
     }
 
     #[OA\Post(
