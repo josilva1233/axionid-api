@@ -24,12 +24,7 @@ class ServiceOrderMessage extends Model
     protected $casts = [
         'is_system_message' => 'boolean',
         'created_at' => 'datetime',
-    ];
-
-    protected $appends = [
-        'user_name',
-        'formatted_date',
-        'attachment_url',
+        'updated_at' => 'datetime',
     ];
 
     // ========== RELACIONAMENTOS ==========
@@ -71,9 +66,16 @@ class ServiceOrderMessage extends Model
         return $this->user?->name ?? 'Usuário Desconhecido';
     }
 
+    // 🔥 CORREÇÃO: Formatar data para exibição
     public function getFormattedDateAttribute(): string
     {
         return $this->created_at->format('d/m/Y H:i');
+    }
+
+    // 🔥 CORREÇÃO: Formatar data para ISO
+    public function getIsoDateAttribute(): string
+    {
+        return $this->created_at->toISOString();
     }
 
     public function getAttachmentUrlAttribute(): ?string
@@ -104,12 +106,15 @@ class ServiceOrderMessage extends Model
             return null;
         }
 
+        $path = $this->attachment_path;
+        $disk = Storage::disk('public');
+        
         return [
-            'name' => basename($this->attachment_path),
-            'size' => Storage::disk('public')->size($this->attachment_path),
-            'size_formatted' => $this->formatFileSize(Storage::disk('public')->size($this->attachment_path)),
-            'mime_type' => Storage::disk('public')->mimeType($this->attachment_path),
-            'extension' => pathinfo($this->attachment_path, PATHINFO_EXTENSION),
+            'name' => basename($path),
+            'size' => $disk->size($path),
+            'size_formatted' => $this->formatFileSize($disk->size($path)),
+            'mime_type' => $disk->mimeType($path),
+            'extension' => pathinfo($path, PATHINFO_EXTENSION),
         ];
     }
 
