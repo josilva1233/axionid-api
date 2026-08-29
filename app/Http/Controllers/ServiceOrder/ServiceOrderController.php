@@ -5,12 +5,13 @@ namespace App\Http\Controllers\ServiceOrder;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Group;
+use App\Models\ServiceOrder;
+use App\Notifications\ServiceOrderNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Laravel\Socialite\Facades\Socialite;
-use App\Models\ServiceOrder;
 use OpenApi\Attributes as OA;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
@@ -84,10 +85,8 @@ class ServiceOrderController extends Controller
         $user = auth()->user();
         $perPage = $request->input('per_page', 10);
         
-        // Incluímos 'user' na listagem para poder filtrar pelo nome do solicitante se necessário
         $query = ServiceOrder::with(['user', 'group', 'technician'])->latest();
         
-        // --- FILTROS DINÂMICOS ---
         if ($request->filled('protocol')) {
             $query->where('protocol', 'like', '%' . $request->protocol . '%');
         }
@@ -110,7 +109,6 @@ class ServiceOrderController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-        // -------------------------
 
         if ($user->is_admin) {
             $orders = $query->paginate($perPage);
@@ -176,6 +174,19 @@ class ServiceOrderController extends Controller
             'attachment_path' => $path,
         ]);
 
+        // 🔥 CARREGAR RELACIONAMENTOS
+        $os->load(['user', 'technician', 'group']);
+
+        // 🔥 ENVIAR NOTIFICAÇÃO DE NOVO CHAMADO
+        try {
+            $this->sendNewOrderNotification($os);
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar notificação de novo chamado:', [
+                'order_id' => $os->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
         return response()->json($os, 201);
     }
 
@@ -201,21 +212,49 @@ class ServiceOrderController extends Controller
     )]
     public function update(Request $request, $id)
     {
-        $os = ServiceOrder::findOrFail($id);
+        $os = ServiceOrder::with(['user', 'technician', 'group'])->findOrFail($id);
         
         if (!auth()->user()->is_admin && $os->user_id !== auth()->id()) {
             return response()->json(['message' => 'Não autorizado'], 403);
         }
 
+        $oldStatus = $os->status;
+        $oldTechnicianId = $os->technician_id;
+        $user = auth()->user();
+
         if ($request->has('status')) {
             $os->status = $request->status;
         }
 
-        if ($request->status === 'in_progress') {
-            $os->technician_id = auth()->id();
+        if ($request->status === 'in_progress' && !$os->technician_id) {
+            $os->technician_id = $user->id;
+        }
+
+        if ($request->has('technician_id')) {
+            $os->technician_id = $request->technician_id;
         }
 
         $os->save();
+        $os->load(['user', 'technician', 'group']);
+
+        // 🔥 ENVIAR NOTIFICAÇÕES
+        try {
+            // 1. Status alterado
+            if ($request->has('status') && $oldStatus !== $os->status) {
+                $this->sendStatusChangeNotification($os, $oldStatus, $user);
+            }
+            
+            // 2. Atribuição alterada
+            if ($os->technician_id && $oldTechnicianId !== $os->technician_id) {
+                $this->sendAssignmentNotification($os, $user);
+            }
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar notificações de atualização:', [
+                'order_id' => $os->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
         return response()->json($os);
     }
 
@@ -249,12 +288,10 @@ class ServiceOrderController extends Controller
     {
         $order = ServiceOrder::findOrFail($id);
         
-        // Apenas admin pode excluir
         if (!auth()->user()->is_admin) {
             return response()->json(['message' => 'Apenas administradores podem excluir ordens de serviço.'], 403);
         }
         
-        // Remove o anexo se existir
         if ($order->attachment_path) {
             Storage::disk('public')->delete($order->attachment_path);
         }
@@ -265,23 +302,18 @@ class ServiceOrderController extends Controller
     }
 
     // ================================================================
-    // 🔥 NOVO MÉTODO: Buscar grupos disponíveis para o formulário
+    // 🔥 MÉTODO: Buscar grupos disponíveis para o formulário
     // ================================================================
-    /**
-     * Buscar grupos disponíveis para o formulário de criação de OS
-     */
     public function getAvailableGroups(Request $request)
     {
         try {
             $user = auth()->user();
             
-            // Se for admin, mostra todos os grupos ativos
             if ($user->is_admin) {
                 $groups = Group::where('is_active', true)
                     ->orderBy('name')
                     ->get(['id', 'name', 'description']);
             } else {
-                // Usuário comum: mostra apenas grupos que ele participa
                 $groups = $user->groups()
                     ->where('is_active', true)
                     ->orderBy('name')
@@ -300,5 +332,133 @@ class ServiceOrderController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    // ================================================================
+    // 🔥 MÉTODOS DE NOTIFICAÇÃO
+    // ================================================================
+
+    /**
+     * Enviar notificação de novo chamado
+     */
+    private function sendNewOrderNotification($order)
+    {
+        $sender = User::find($order->user_id);
+        
+        if (!$sender) {
+            Log::error('Remetente não encontrado', ['order_id' => $order->id]);
+            return;
+        }
+
+        $message = (object) [
+            'message' => "Novo chamado #{$order->protocol}: {$order->title}",
+            'user_id' => $order->user_id,
+            'hasAttachment' => function() use ($order) {
+                return !empty($order->attachment_path);
+            }
+        ];
+
+        $recipients = $this->getAllRecipients($order, $sender);
+
+        foreach ($recipients as $recipient) {
+            if ($recipient->id !== $sender->id) {
+                try {
+                    $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'new_order'));
+                    Log::info('Notificação de novo chamado enviada para:', ['email' => $recipient->email]);
+                } catch (\Exception $e) {
+                    Log::error('Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Enviar notificação de mudança de status
+     */
+    private function sendStatusChangeNotification($order, $oldStatus, $sender)
+    {
+        $message = (object) [
+            'message' => "Status alterado de '{$oldStatus}' para '{$order->status}'",
+            'user_id' => $sender->id,
+            'hasAttachment' => function() { return false; }
+        ];
+
+        $recipients = $this->getAllRecipients($order, $sender);
+
+        foreach ($recipients as $recipient) {
+            if ($recipient->id !== $sender->id) {
+                try {
+                    $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'status_change'));
+                    Log::info('Notificação de status enviada para:', ['email' => $recipient->email]);
+                } catch (\Exception $e) {
+                    Log::error('Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Enviar notificação de atribuição
+     */
+    private function sendAssignmentNotification($order, $sender)
+    {
+        if (!$order->technician) {
+            return;
+        }
+
+        $message = (object) [
+            'message' => "Chamado atribuído para: {$order->technician->name}",
+            'user_id' => $sender->id,
+            'hasAttachment' => function() { return false; }
+        ];
+
+        $recipients = $this->getAllRecipients($order, $sender);
+
+        foreach ($recipients as $recipient) {
+            if ($recipient->id !== $sender->id) {
+                try {
+                    $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'assigned'));
+                    Log::info('Notificação de atribuição enviada para:', ['email' => $recipient->email]);
+                } catch (\Exception $e) {
+                    Log::error('Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Buscar todos os destinatários
+     */
+    private function getAllRecipients($order, $sender)
+    {
+        $recipients = collect();
+
+        // 1. Solicitante
+        if ($order->user && $order->user->id !== $sender->id) {
+            $recipients->push($order->user);
+        }
+
+        // 2. Técnico
+        if ($order->technician && $order->technician->id !== $sender->id) {
+            $recipients->push($order->technician);
+        }
+
+        // 3. Administradores
+        $admins = User::where('is_admin', true)
+            ->where('id', '!=', $sender->id)
+            ->get();
+        $recipients = $recipients->merge($admins);
+
+        // 4. Membros do grupo
+        if ($order->group_id) {
+            $members = User::whereHas('groups', function($q) use ($order) {
+                $q->where('groups.id', $order->group_id);
+            })
+            ->where('id', '!=', $sender->id)
+            ->get();
+            $recipients = $recipients->merge($members);
+        }
+
+        return $recipients->unique('id');
     }
 }
