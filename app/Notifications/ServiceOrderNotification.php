@@ -6,11 +6,11 @@ use App\Models\ServiceOrder;
 use App\Models\ServiceOrderMessage;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification;
 
-class NewMessageNotification extends Notification implements ShouldQueue
+class ServiceOrderNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -27,7 +27,7 @@ class NewMessageNotification extends Notification implements ShouldQueue
 
     public function via($notifiable)
     {
-        return ['mail', 'database']; // Adicione 'database' se quiser salvar notificações no banco
+        return ['mail', 'database'];
     }
 
     public function toMail($notifiable)
