@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\ServiceOrder;
 use App\Models\User;
-use App\Notifications\NewMessageNotification;
+use App\Notifications\ServiceOrderNotification; // ← ALTERADO
 use Illuminate\Console\Command;
 
 class SendServiceOrderNotifications extends Command
@@ -111,7 +111,8 @@ class SendServiceOrderNotifications extends Command
                     $this->line("   🧪 [TESTE] Notificação para: {$recipient->name} ({$recipient->email})");
                 } else {
                     try {
-                        $recipient->notify(new NewMessageNotification($order, $lastMessage, $sender));
+                        // ← ALTERADO AQUI
+                        $recipient->notify(new ServiceOrderNotification($order, $lastMessage, $sender));
                         $this->line("   ✅ Notificação enviada para: {$recipient->name} ({$recipient->email})");
                     } catch (\Exception $e) {
                         $this->error("   ❌ Erro ao enviar para {$recipient->name}: {$e->getMessage()}");
