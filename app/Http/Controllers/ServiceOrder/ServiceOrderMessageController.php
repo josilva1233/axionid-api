@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderMessage;
 use App\Models\User;
-use App\Notifications\NewMessageNotification;
+use App\Notifications\ServiceOrderNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
