@@ -336,12 +336,29 @@ class ServiceOrderController extends Controller
      */
     private function sendNewOrderNotification($order)
     {
+        // 🔥 RECARREGAR O ORDER COM TODOS OS RELACIONAMENTOS
+        $order = ServiceOrder::with(['user', 'technician', 'group'])->find($order->id);
+        
+        if (!$order) {
+            Log::error('Ordem não encontrada', ['order_id' => $order->id]);
+            return;
+        }
+        
         $sender = User::find($order->user_id);
         
         if (!$sender) {
             Log::error('Remetente não encontrado', ['order_id' => $order->id]);
             return;
         }
+
+        Log::info('📢 NOVO CHAMADO - Iniciando envio:', [
+            'order_id' => $order->id,
+            'protocol' => $order->protocol,
+            'sender_id' => $sender->id,
+            'sender_email' => $sender->email,
+            'solicitante_id' => $order->user_id,
+            'solicitante_email' => $order->user ? $order->user->email : 'NÃO CARREGADO'
+        ]);
 
         $message = (object) [
             'message' => "Novo chamado #{$order->protocol}: {$order->title}",
@@ -351,6 +368,11 @@ class ServiceOrderController extends Controller
 
         // 🔥 CORRIGIDO: Usar método que inclui o solicitante
         $recipients = $this->getAllRecipientsForNewOrder($order, $sender);
+
+        Log::info('📢 Destinatários encontrados:', [
+            'total' => $recipients->count(),
+            'emails' => $recipients->pluck('email')->toArray()
+        ]);
 
         foreach ($recipients as $recipient) {
             try {
@@ -367,6 +389,8 @@ class ServiceOrderController extends Controller
      */
     private function sendStatusChangeNotification($order, $oldStatus, $sender)
     {
+        $order = ServiceOrder::with(['user', 'technician', 'group'])->find($order->id);
+        
         $message = (object) [
             'message' => "Status alterado de '{$oldStatus}' para '{$order->status}'",
             'user_id' => $sender->id,
@@ -398,6 +422,8 @@ class ServiceOrderController extends Controller
             return;
         }
 
+        $order = ServiceOrder::with(['user', 'technician', 'group'])->find($order->id);
+
         $message = (object) [
             'message' => "Chamado atribuído para: {$order->technician->name}",
             'user_id' => $sender->id,
@@ -427,10 +453,28 @@ class ServiceOrderController extends Controller
     {
         $recipients = collect();
 
-        // 1. 🔥 SOLICITANTE (sempre incluso, inclusive o remetente)
+        Log::info('🔍 Buscando destinatários para novo chamado:', [
+            'order_id' => $order->id,
+            'user_id' => $order->user_id,
+            'has_user' => $order->user ? 'Sim' : 'Não'
+        ]);
+
+        // 1. 🔥 SOLICITANTE - TENTATIVA 1: via relacionamento
         if ($order->user) {
             $recipients->push($order->user);
-            Log::info('📌 Solicitante incluso (novo chamado):', ['email' => $order->user->email]);
+            Log::info('📌 Solicitante incluso (via relacionamento):', ['email' => $order->user->email]);
+        } else {
+            // 🔥 TENTATIVA 2: buscar diretamente pelo user_id
+            $user = User::find($order->user_id);
+            if ($user) {
+                $recipients->push($user);
+                Log::info('📌 Solicitante incluso (via User::find):', ['email' => $user->email]);
+            } else {
+                Log::warning('⚠️ Solicitante NÃO encontrado!', [
+                    'order_id' => $order->id,
+                    'user_id' => $order->user_id
+                ]);
+            }
         }
 
         // 2. Técnico (se houver e não for o mesmo)
@@ -460,6 +504,8 @@ class ServiceOrderController extends Controller
                 Log::info('👥 Membro do grupo incluso:', ['email' => $member->email]);
             }
         }
+
+        Log::info('📊 Total de destinatários encontrados:', ['count' => $recipients->count()]);
 
         return $recipients->unique('id');
     }
