@@ -105,6 +105,13 @@ Route::prefix('v1')->group(function () {
             Route::post('/groups/{roleId}/permissions', [PermissionController::class, 'attachPermissionToRole']);
             Route::delete('/groups/{roleId}/permissions/{permissionId}', [PermissionController::class, 'detachPermissionFromRole']);
 
+            // 🔥 NOVAS ROTAS: Gestão de Permissões do Usuário
+            Route::prefix('users/{userId}/permissions')->group(function () {
+                Route::get('/', [PermissionController::class, 'getUserPermissions']);
+                Route::post('/', [PermissionController::class, 'assignPermissionToUser']);
+                Route::delete('/{permissionId}', [PermissionController::class, 'removePermissionFromUser']);
+            });
+
             // --- Gestão de Auditoria ---
             Route::get('/audit-logs', [AuditLogController::class, 'index']);
         });

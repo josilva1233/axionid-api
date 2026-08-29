@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
+use Illuminate\Support\Facades\Log;
 
 class PermissionController extends Controller
 {
@@ -316,5 +317,134 @@ class PermissionController extends Controller
         $group->permissions()->detach($permissionId);
 
         return response()->json(['message' => 'Permissão removida com sucesso.']);
+    }
+
+    // =========================================================
+    // 🔥 NOVOS MÉTODOS: GESTÃO DE PERMISSÕES DO USUÁRIO
+    // =========================================================
+
+    /**
+     * Obter todas as permissões de um usuário
+     */
+    public function getUserPermissions($userId)
+    {
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        try {
+            $user = User::with('permissions')->findOrFail($userId);
+            $permissions = $user->permissions;
+
+            return response()->json([
+                'permissions' => $permissions,
+                'total' => $permissions->count()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erro ao buscar permissões do usuário:', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Erro ao buscar permissões',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Atribuir uma permissão a um usuário
+     */
+    public function assignPermissionToUser(Request $request, $userId)
+    {
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        try {
+            $request->validate([
+                'permission_id' => 'required|exists:permissions,id'
+            ]);
+
+            $user = User::findOrFail($userId);
+            $permission = Permission::findOrFail($request->permission_id);
+
+            // Verificar se o usuário já possui esta permissão
+            if ($user->permissions()->where('permission_id', $permission->id)->exists()) {
+                return response()->json([
+                    'message' => 'Usuário já possui esta permissão.'
+                ], 422);
+            }
+
+            // Atribuir permissão ao usuário
+            $user->permissions()->attach($permission->id);
+
+            Log::info('Permissão atribuída ao usuário:', [
+                'user_id' => $userId,
+                'permission_id' => $permission->id,
+                'permission_name' => $permission->name,
+                'admin_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'message' => 'Permissão atribuída com sucesso!',
+                'permission' => $permission
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erro ao atribuir permissão:', [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Erro ao atribuir permissão',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Remover uma permissão de um usuário
+     */
+    public function removePermissionFromUser($userId, $permissionId)
+    {
+        if (!auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        try {
+            $user = User::findOrFail($userId);
+            $permission = Permission::findOrFail($permissionId);
+
+            // Verificar se o usuário possui esta permissão
+            if (!$user->permissions()->where('permission_id', $permission->id)->exists()) {
+                return response()->json([
+                    'message' => 'Usuário não possui esta permissão.'
+                ], 422);
+            }
+
+            // Remover permissão do usuário
+            $user->permissions()->detach($permission->id);
+
+            Log::info('Permissão removida do usuário:', [
+                'user_id' => $userId,
+                'permission_id' => $permission->id,
+                'permission_name' => $permission->name,
+                'admin_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'message' => 'Permissão removida com sucesso!'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erro ao remover permissão:', [
+                'user_id' => $userId,
+                'permission_id' => $permissionId,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Erro ao remover permissão',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }
