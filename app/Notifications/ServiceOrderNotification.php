@@ -7,13 +7,9 @@ use App\Models\ServiceOrderMessage;
 use App\Models\User;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-// 🔥 REMOVIDO: use Illuminate\Bus\Queueable;
-// 🔥 REMOVIDO: use Illuminate\Contracts\Queue\ShouldQueue;
 
-class ServiceOrderNotification extends Notification // 🔥 REMOVIDO: implements ShouldQueue
+class ServiceOrderNotification extends Notification
 {
-    // 🔥 REMOVIDO: use Queueable;
-
     protected $serviceOrder;
     protected $message;
     protected $sender;
@@ -36,6 +32,10 @@ class ServiceOrderNotification extends Notification // 🔥 REMOVIDO: implements
     {
         $order = $this->serviceOrder;
         $sender = $this->sender;
+
+        // 🔥 URL COM REDIRECIONAMENTO PARA LOGIN
+        $frontendUrl = config('app.frontend_url', 'https://axionid-front.vercel.app');
+        $redirectUrl = $frontendUrl . '/login?redirect=/dashboard/service-orders/' . $order->id;
 
         $subject = match($this->type) {
             'new_order' => '📌 Novo Chamado Aberto - ' . $order->protocol,
@@ -67,7 +67,8 @@ class ServiceOrderNotification extends Notification // 🔥 REMOVIDO: implements
             ->when($this->hasAttachment(), function ($mail) {
                 return $mail->line('📎 **Anexo:** Disponível para download no sistema.');
             })
-            ->action('Ver Chamado', url('/service-orders/' . $order->id))
+            // 🔥 BOTÃO COM REDIRECIONAMENTO PARA LOGIN
+            ->action('Ver Chamado', $redirectUrl)
             ->line('Responda diretamente no sistema para manter o histórico completo.')
             ->line('Atenciosamente,')
             ->line('**Axion ID**');
