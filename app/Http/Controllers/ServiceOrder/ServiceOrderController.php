@@ -4,6 +4,7 @@ namespace App\Http\Controllers\ServiceOrder;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Group;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -12,10 +13,11 @@ use Laravel\Socialite\Facades\Socialite;
 use App\Models\ServiceOrder;
 use OpenApi\Attributes as OA;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class ServiceOrderController extends Controller
 {
-#[OA\Get(
+    #[OA\Get(
         path: '/api/v1/service-orders',
         summary: 'Listar Ordens de Serviço',
         description: 'Retorna as OSs vinculadas ao usuário, ao seu grupo ou todas se for admin, permitindo filtros opcionais.',
@@ -77,51 +79,51 @@ class ServiceOrderController extends Controller
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
-public function index(Request $request)
-{
-    $user = auth()->user();
-    $perPage = $request->input('per_page', 10);
-    
-    // Incluímos 'user' na listagem para poder filtrar pelo nome do solicitante se necessário
-    $query = ServiceOrder::with(['user', 'group', 'technician'])->latest();
-    
-    // --- FILTROS DINÂMICOS ---
-    if ($request->filled('protocol')) {
-        $query->where('protocol', 'like', '%' . $request->protocol . '%');
-    }
+    public function index(Request $request)
+    {
+        $user = auth()->user();
+        $perPage = $request->input('per_page', 10);
+        
+        // Incluímos 'user' na listagem para poder filtrar pelo nome do solicitante se necessário
+        $query = ServiceOrder::with(['user', 'group', 'technician'])->latest();
+        
+        // --- FILTROS DINÂMICOS ---
+        if ($request->filled('protocol')) {
+            $query->where('protocol', 'like', '%' . $request->protocol . '%');
+        }
 
-    if ($request->filled('title')) {
-        $query->where('title', 'like', '%' . $request->title . '%');
-    }
+        if ($request->filled('title')) {
+            $query->where('title', 'like', '%' . $request->title . '%');
+        }
 
-    if ($request->filled('applicant') || $request->filled('solicitante')) {
-        $search = $request->input('applicant', $request->input('solicitante'));
-        $query->whereHas('user', function($q) use ($search) {
-            $q->where('name', 'like', '%' . $search . '%');
-        });
-    }
+        if ($request->filled('applicant') || $request->filled('solicitante')) {
+            $search = $request->input('applicant', $request->input('solicitante'));
+            $query->whereHas('user', function($q) use ($search) {
+                $q->where('name', 'like', '%' . $search . '%');
+            });
+        }
 
-    if ($request->filled('priority')) {
-        $query->where('priority', $request->priority);
-    }
+        if ($request->filled('priority')) {
+            $query->where('priority', $request->priority);
+        }
 
-    if ($request->filled('status')) {
-        $query->where('status', $request->status);
-    }
-    // -------------------------
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        // -------------------------
 
-    if ($user->is_admin) {
-        $orders = $query->paginate($perPage);
-    } else {
-        $groupIds = $user->groups->pluck('id');
-        $orders = $query->where(function($q) use ($user, $groupIds) {
-            $q->where('user_id', $user->id)
-              ->orWhereIn('group_id', $groupIds);
-        })->paginate($perPage);
-    }
+        if ($user->is_admin) {
+            $orders = $query->paginate($perPage);
+        } else {
+            $groupIds = $user->groups->pluck('id');
+            $orders = $query->where(function($q) use ($user, $groupIds) {
+                $q->where('user_id', $user->id)
+                  ->orWhereIn('group_id', $groupIds);
+            })->paginate($perPage);
+        }
 
-    return response()->json($orders);
-}
+        return response()->json($orders);
+    }
 
     #[OA\Post(
         path: '/api/v1/service-orders',
@@ -260,5 +262,43 @@ public function index(Request $request)
         $order->delete();
         
         return response()->json(['message' => 'Ordem de serviço excluída com sucesso.'], 200);
+    }
+
+    // ================================================================
+    // 🔥 NOVO MÉTODO: Buscar grupos disponíveis para o formulário
+    // ================================================================
+    /**
+     * Buscar grupos disponíveis para o formulário de criação de OS
+     */
+    public function getAvailableGroups(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            
+            // Se for admin, mostra todos os grupos ativos
+            if ($user->is_admin) {
+                $groups = Group::where('is_active', true)
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'description']);
+            } else {
+                // Usuário comum: mostra apenas grupos que ele participa
+                $groups = $user->groups()
+                    ->where('is_active', true)
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'description']);
+            }
+
+            return response()->json([
+                'data' => $groups,
+                'total' => $groups->count()
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Erro ao buscar grupos:', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Erro ao buscar grupos',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

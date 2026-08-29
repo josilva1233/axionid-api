@@ -61,6 +61,9 @@ Route::prefix('v1')->group(function () {
             Route::put('/{id}', [ServiceOrderController::class, 'update']);
             Route::delete('/{id}', [ServiceOrderController::class, 'destroy']);
             
+            // 🔥 NOVA ROTA: Buscar grupos disponíveis para o formulário
+            Route::get('/groups/available', [ServiceOrderController::class, 'getAvailableGroups']);
+            
             // --- ROTAS DE MENSAGENS (aninhadas corretamente) ---
             Route::prefix('{serviceOrderId}/messages')->group(function () {
                 Route::get('/', [ServiceOrderMessageController::class, 'index']);
