@@ -95,6 +95,7 @@ Route::prefix('v1')->group(function () {
             // --- Gestão de Permissões (IAM) ---
             Route::prefix('permissions')->group(function () {
                 Route::get('/', [PermissionController::class, 'listPermissions']);
+                Route::post('/list', [PermissionController::class, 'listPermissions']);
                 Route::get('/{id}', [PermissionController::class, 'showPermission']);
                 Route::post('/', [PermissionController::class, 'storePermission']);
                 Route::put('/{id}', [PermissionController::class, 'updatePermission']);
