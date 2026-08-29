@@ -5,14 +5,14 @@ namespace App\Notifications;
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderMessage;
 use App\Models\User;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+// 🔥 REMOVIDO: use Illuminate\Bus\Queueable;
+// 🔥 REMOVIDO: use Illuminate\Contracts\Queue\ShouldQueue;
 
-class ServiceOrderNotification extends Notification implements ShouldQueue
+class ServiceOrderNotification extends Notification // 🔥 REMOVIDO: implements ShouldQueue
 {
-    use Queueable;
+    // 🔥 REMOVIDO: use Queueable;
 
     protected $serviceOrder;
     protected $message;
