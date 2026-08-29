@@ -174,10 +174,8 @@ class ServiceOrderController extends Controller
             'attachment_path' => $path,
         ]);
 
-        // 🔥 CARREGAR RELACIONAMENTOS
         $os->load(['user', 'technician', 'group']);
 
-        // 🔥 ENVIAR NOTIFICAÇÃO DE NOVO CHAMADO
         try {
             $this->sendNewOrderNotification($os);
         } catch (\Exception $e) {
@@ -237,14 +235,11 @@ class ServiceOrderController extends Controller
         $os->save();
         $os->load(['user', 'technician', 'group']);
 
-        // 🔥 ENVIAR NOTIFICAÇÕES
         try {
-            // 1. Status alterado
             if ($request->has('status') && $oldStatus !== $os->status) {
                 $this->sendStatusChangeNotification($os, $oldStatus, $user);
             }
             
-            // 2. Atribuição alterada
             if ($os->technician_id && $oldTechnicianId !== $os->technician_id) {
                 $this->sendAssignmentNotification($os, $user);
             }
@@ -301,9 +296,6 @@ class ServiceOrderController extends Controller
         return response()->json(['message' => 'Ordem de serviço excluída com sucesso.'], 200);
     }
 
-    // ================================================================
-    // 🔥 MÉTODO: Buscar grupos disponíveis para o formulário
-    // ================================================================
     public function getAvailableGroups(Request $request)
     {
         try {
@@ -335,11 +327,12 @@ class ServiceOrderController extends Controller
     }
 
     // ================================================================
-    // 🔥 MÉTODOS DE NOTIFICAÇÃO
+    // 🔥 MÉTODOS DE NOTIFICAÇÃO - CORRIGIDOS
     // ================================================================
 
     /**
-     * Enviar notificação de novo chamado
+     * 🔥 ENVIAR NOTIFICAÇÃO DE NOVO CHAMADO
+     * CORRIGIDO: Envia para o solicitante também
      */
     private function sendNewOrderNotification($order)
     {
@@ -353,21 +346,18 @@ class ServiceOrderController extends Controller
         $message = (object) [
             'message' => "Novo chamado #{$order->protocol}: {$order->title}",
             'user_id' => $order->user_id,
-            'hasAttachment' => function() use ($order) {
-                return !empty($order->attachment_path);
-            }
+            'has_attachment' => !empty($order->attachment_path),
         ];
 
-        $recipients = $this->getAllRecipients($order, $sender);
+        // 🔥 CORRIGIDO: Usar método que inclui o solicitante
+        $recipients = $this->getAllRecipientsForNewOrder($order, $sender);
 
         foreach ($recipients as $recipient) {
-            if ($recipient->id !== $sender->id) {
-                try {
-                    $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'new_order'));
-                    Log::info('Notificação de novo chamado enviada para:', ['email' => $recipient->email]);
-                } catch (\Exception $e) {
-                    Log::error('Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
-                }
+            try {
+                $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'new_order'));
+                Log::info('✅ Notificação de novo chamado enviada para:', ['email' => $recipient->email]);
+            } catch (\Exception $e) {
+                Log::error('❌ Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
             }
         }
     }
@@ -380,19 +370,21 @@ class ServiceOrderController extends Controller
         $message = (object) [
             'message' => "Status alterado de '{$oldStatus}' para '{$order->status}'",
             'user_id' => $sender->id,
-            'hasAttachment' => function() { return false; }
+            'has_attachment' => false,
         ];
 
         $recipients = $this->getAllRecipients($order, $sender);
 
         foreach ($recipients as $recipient) {
-            if ($recipient->id !== $sender->id) {
-                try {
-                    $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'status_change'));
-                    Log::info('Notificação de status enviada para:', ['email' => $recipient->email]);
-                } catch (\Exception $e) {
-                    Log::error('Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
-                }
+            if ($recipient->id === $sender->id) {
+                continue;
+            }
+            
+            try {
+                $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'status_change'));
+                Log::info('✅ Notificação de status enviada para:', ['email' => $recipient->email]);
+            } catch (\Exception $e) {
+                Log::error('❌ Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
             }
         }
     }
@@ -409,45 +401,52 @@ class ServiceOrderController extends Controller
         $message = (object) [
             'message' => "Chamado atribuído para: {$order->technician->name}",
             'user_id' => $sender->id,
-            'hasAttachment' => function() { return false; }
+            'has_attachment' => false,
         ];
 
         $recipients = $this->getAllRecipients($order, $sender);
 
         foreach ($recipients as $recipient) {
-            if ($recipient->id !== $sender->id) {
-                try {
-                    $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'assigned'));
-                    Log::info('Notificação de atribuição enviada para:', ['email' => $recipient->email]);
-                } catch (\Exception $e) {
-                    Log::error('Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
-                }
+            if ($recipient->id === $sender->id) {
+                continue;
+            }
+            
+            try {
+                $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'assigned'));
+                Log::info('✅ Notificação de atribuição enviada para:', ['email' => $recipient->email]);
+            } catch (\Exception $e) {
+                Log::error('❌ Erro ao enviar notificação:', ['email' => $recipient->email, 'error' => $e->getMessage()]);
             }
         }
     }
 
     /**
-     * Buscar todos os destinatários
+     * 🔥 BUSCAR DESTINATÁRIOS PARA NOVO CHAMADO (INCLUI O SOLICITANTE)
      */
-    private function getAllRecipients($order, $sender)
+    private function getAllRecipientsForNewOrder($order, $sender)
     {
         $recipients = collect();
 
-        // 1. Solicitante
-        if ($order->user && $order->user->id !== $sender->id) {
+        // 1. 🔥 SOLICITANTE (sempre incluso, inclusive o remetente)
+        if ($order->user) {
             $recipients->push($order->user);
+            Log::info('📌 Solicitante incluso (novo chamado):', ['email' => $order->user->email]);
         }
 
-        // 2. Técnico
+        // 2. Técnico (se houver e não for o mesmo)
         if ($order->technician && $order->technician->id !== $sender->id) {
             $recipients->push($order->technician);
+            Log::info('🔧 Técnico incluso:', ['email' => $order->technician->email]);
         }
 
         // 3. Administradores
         $admins = User::where('is_admin', true)
             ->where('id', '!=', $sender->id)
             ->get();
-        $recipients = $recipients->merge($admins);
+        foreach ($admins as $admin) {
+            $recipients->push($admin);
+            Log::info('👑 Admin incluso:', ['email' => $admin->email]);
+        }
 
         // 4. Membros do grupo
         if ($order->group_id) {
@@ -456,7 +455,54 @@ class ServiceOrderController extends Controller
             })
             ->where('id', '!=', $sender->id)
             ->get();
-            $recipients = $recipients->merge($members);
+            foreach ($members as $member) {
+                $recipients->push($member);
+                Log::info('👥 Membro do grupo incluso:', ['email' => $member->email]);
+            }
+        }
+
+        return $recipients->unique('id');
+    }
+
+    /**
+     * 🔥 BUSCAR DESTINATÁRIOS PARA OUTROS EVENTOS (EXCLUI O REMETENTE)
+     */
+    private function getAllRecipients($order, $sender)
+    {
+        $recipients = collect();
+
+        // 1. Solicitante
+        if ($order->user && $order->user->id !== $sender->id) {
+            $recipients->push($order->user);
+            Log::info('📌 Solicitante incluso:', ['email' => $order->user->email]);
+        }
+
+        // 2. Técnico
+        if ($order->technician && $order->technician->id !== $sender->id) {
+            $recipients->push($order->technician);
+            Log::info('🔧 Técnico incluso:', ['email' => $order->technician->email]);
+        }
+
+        // 3. Administradores
+        $admins = User::where('is_admin', true)
+            ->where('id', '!=', $sender->id)
+            ->get();
+        foreach ($admins as $admin) {
+            $recipients->push($admin);
+            Log::info('👑 Admin incluso:', ['email' => $admin->email]);
+        }
+
+        // 4. Membros do grupo
+        if ($order->group_id) {
+            $members = User::whereHas('groups', function($q) use ($order) {
+                $q->where('groups.id', $order->group_id);
+            })
+            ->where('id', '!=', $sender->id)
+            ->get();
+            foreach ($members as $member) {
+                $recipients->push($member);
+                Log::info('👥 Membro do grupo incluso:', ['email' => $member->email]);
+            }
         }
 
         return $recipients->unique('id');
