@@ -287,7 +287,8 @@ class ServiceOrderMessageController extends Controller
 
         foreach ($recipients as $recipient) {
             try {
-                $recipient->notify(new NewMessageNotification($order, $message, $sender));
+                // ✅ CORRIGIDO: NewMessageNotification → ServiceOrderNotification
+                $recipient->notify(new ServiceOrderNotification($order, $message, $sender));
             } catch (\Exception $e) {
                 \Log::error('Erro ao enviar notificação de mensagem', [
                     'recipient_id' => $recipient->id,
