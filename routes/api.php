@@ -38,6 +38,10 @@ Route::prefix('v1')->group(function () {
             return $request->user()->load('address');
         });
 
+            //NOVA ROTA: PERMISSÕES DO USUÁRIO LOGADO
+        Route::get('/me/permissions', [AxionAuthController::class, 'getMyPermissions']);
+
+
         Route::get('/users/find-by-email/{email}', [AxionAuthController::class, 'findByEmail']);
 
         // --- Módulo de Grupos ---

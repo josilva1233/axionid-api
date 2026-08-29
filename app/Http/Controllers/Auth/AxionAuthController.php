@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
@@ -518,5 +519,68 @@ class AxionAuthController extends Controller
             'name' => $user->name,
             'email' => $user->email
         ]);
+    }
+        /**
+     * 🔥 OBTER PERMISSÕES DO USUÁRIO LOGADO
+     * GET /api/v1/me/permissions
+     * 
+     * Retorna todas as permissões do usuário (diretas + grupos + roles)
+     */
+    public function getMyPermissions(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Usuário não autenticado'
+                ], 401);
+            }
+
+            // Se for admin, retorna todas as permissões do sistema
+            if ($user->is_admin) {
+                $permissions = Permission::all();
+                return response()->json([
+                    'permissions' => $permissions,
+                    'total' => $permissions->count(),
+                    'is_admin' => true,
+                ]);
+            }
+
+            // Buscar permissões do usuário (diretas + grupos + roles)
+            $permissions = $user->getAllPermissions();
+
+            // 🔥 DETALHAR ORIGEM DAS PERMISSÕES
+            $source = [
+                'direct' => $user->permissions->pluck('name')->toArray(),
+                'groups' => [],
+                'roles' => [],
+            ];
+
+            foreach ($user->groups as $group) {
+                $source['groups'][$group->name] = $group->permissions->pluck('name')->toArray();
+            }
+
+            foreach ($user->roles as $role) {
+                $source['roles'][$role->name] = $role->permissions->pluck('name')->toArray();
+            }
+
+            return response()->json([
+                'permissions' => $permissions,
+                'total' => $permissions->count(),
+                'is_admin' => false,
+                'source' => $source,
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Erro ao buscar permissões do usuário:', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'message' => 'Erro ao buscar permissões',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }
