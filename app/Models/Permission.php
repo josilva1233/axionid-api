@@ -22,4 +22,20 @@ class Permission extends Model
     {
         return $this->belongsToMany(Role::class);
     }
+
+    /**
+     * 🔥 Relacionamento: Usuários que têm esta permissão diretamente
+     */
+    public function users()
+    {
+        return $this->belongsToMany(User::class, 'user_permissions');
+    }
+
+    /**
+     * 🔥 Relacionamento: Grupos que têm esta permissão
+     */
+    public function groups()
+    {
+        return $this->belongsToMany(Group::class, 'group_permissions');
+    }
 }
