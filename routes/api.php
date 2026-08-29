@@ -59,16 +59,17 @@ Route::prefix('v1')->group(function () {
             Route::get('/{id}', [ServiceOrderController::class, 'show']);
             Route::patch('/{id}', [ServiceOrderController::class, 'update']);
             Route::put('/{id}', [ServiceOrderController::class, 'update']);
-            Route::delete('/{id}', [ServiceOrderController::class, 'destroy']); 
+            Route::delete('/{id}', [ServiceOrderController::class, 'destroy']);
+            
+            // --- ROTAS DE MENSAGENS (aninhadas corretamente) ---
+            Route::prefix('{serviceOrderId}/messages')->group(function () {
+                Route::get('/', [ServiceOrderMessageController::class, 'index']);
+                Route::post('/', [ServiceOrderMessageController::class, 'store']);
+                Route::put('/{messageId}', [ServiceOrderMessageController::class, 'update']);
+                Route::delete('/{messageId}', [ServiceOrderMessageController::class, 'destroy']);
+                Route::put('/{messageId}/read', [ServiceOrderMessageController::class, 'markAsRead']);
+            });
         });
-
-            // --- ROTAS DE MENSAGENS (aninhadas) ---
-    Route::prefix('{serviceOrderId}/messages')->group(function () {
-        Route::get('/', [ServiceOrderMessageController::class, 'index']);
-        Route::post('/', [ServiceOrderMessageController::class, 'store']);
-        Route::put('/{messageId}', [ServiceOrderMessageController::class, 'update']);
-        Route::delete('/{messageId}', [ServiceOrderMessageController::class, 'destroy']);
-    });
 
         // =========================================================
         // --- Módulo Administrativo (Super Admin) ---
@@ -90,11 +91,11 @@ Route::prefix('v1')->group(function () {
 
             // --- Gestão de Permissões (IAM) ---
             Route::prefix('permissions')->group(function () {
-                Route::get('/', [PermissionController::class, 'listPermissions']);      // Listar
-                Route::get('/{id}', [PermissionController::class, 'showPermission']);    // Detalhes ← ADICIONAR
-                Route::post('/', [PermissionController::class, 'storePermission']);       // Criar
-                Route::put('/{id}', [PermissionController::class, 'updatePermission']);   // Editar ← ADICIONAR
-                Route::delete('/{id}', [PermissionController::class, 'deletePermission']); // Excluir ← ADICIONAR
+                Route::get('/', [PermissionController::class, 'listPermissions']);
+                Route::get('/{id}', [PermissionController::class, 'showPermission']);
+                Route::post('/', [PermissionController::class, 'storePermission']);
+                Route::put('/{id}', [PermissionController::class, 'updatePermission']);
+                Route::delete('/{id}', [PermissionController::class, 'deletePermission']);
             });
 
             // --- Gestão de Permissões em Grupos ---

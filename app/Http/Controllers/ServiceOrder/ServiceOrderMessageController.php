@@ -5,194 +5,316 @@ namespace App\Http\Controllers\ServiceOrder;
 use App\Http\Controllers\Controller;
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderMessage;
+use App\Models\User;
+use App\Notifications\NewMessageNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use OpenApi\Attributes as OA;
 
 class ServiceOrderMessageController extends Controller
 {
     /**
-     * Listar todas as mensagens de uma OS específica.
-     * Apenas usuários com acesso à OS podem ver.
+     * Listar mensagens da OS
      */
-    #[OA\Get(
-        path: '/api/v1/service-orders/{serviceOrderId}/messages',
-        summary: 'Listar mensagens de uma OS',
-        tags: ['Ordens de Serviço - Mensagens'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'serviceOrderId', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'Mensagens recuperadas'),
-            new OA\Response(response: 403, description: 'Sem permissão')
-        ]
-    )]
-    public function index($serviceOrderId)
+    public function index(Request $request, $serviceOrderId)
     {
-        $order = ServiceOrder::findOrFail($serviceOrderId);
-        
-        // Verifica se o usuário tem acesso à OS (mesma lógica do index do ServiceOrderController)
+        $order = ServiceOrder::with(['user', 'technician', 'group'])->findOrFail($serviceOrderId);
         $user = auth()->user();
-        $hasAccess = $user->is_admin || 
-                     $order->user_id == $user->id || 
-                     ($order->group_id && $user->groups->contains($order->group_id));
-        
-        if (!$hasAccess) {
-            return response()->json(['message' => 'Você não tem permissão para ver mensagens desta OS.'], 403);
+
+        // Verificar permissão
+        if (!$this->canAccessOrder($user, $order)) {
+            return response()->json([
+                'message' => 'Sem permissão para visualizar estas mensagens'
+            ], 403);
         }
 
-        $messages = $order->messages()->with('user')->paginate(15);
+        $perPage = $request->input('per_page', 20);
+        
+        $messages = ServiceOrderMessage::with(['user'])
+            ->where('service_order_id', $order->id)
+            ->orderBy('created_at', 'asc')
+            ->paginate($perPage);
 
-        return response()->json($messages);
+        // Marcar mensagens como lidas (exceto as do próprio usuário)
+        ServiceOrderMessage::where('service_order_id', $order->id)
+            ->where('user_id', '!=', $user->id)
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+
+        // Contar não lidas
+        $unreadCount = ServiceOrderMessage::where('service_order_id', $order->id)
+            ->where('user_id', '!=', $user->id)
+            ->whereNull('read_at')
+            ->count();
+
+        return response()->json([
+            'service_order' => [
+                'id' => $order->id,
+                'protocol' => $order->protocol,
+                'title' => $order->title,
+                'status' => $order->status,
+                'priority' => $order->priority,
+                'user_id' => $order->user_id,
+                'technician_id' => $order->technician_id,
+            ],
+            'messages' => $messages->through(function ($message) {
+                return $this->formatMessage($message);
+            }),
+            'meta' => [
+                'total' => $messages->total(),
+                'per_page' => $messages->perPage(),
+                'current_page' => $messages->currentPage(),
+                'last_page' => $messages->lastPage(),
+                'unread_count' => $unreadCount,
+            ]
+        ]);
     }
 
     /**
-     * Criar uma nova mensagem na OS.
+     * Adicionar mensagem na OS
      */
-    #[OA\Post(
-        path: '/api/v1/service-orders/{serviceOrderId}/messages',
-        summary: 'Adicionar mensagem a uma OS',
-        tags: ['Ordens de Serviço - Mensagens'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'serviceOrderId', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-        ],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                properties: [
-                    new OA\Property(property: 'message', type: 'string', example: 'Estou analisando o problema.'),
-                    new OA\Property(property: 'attachment', type: 'string', format: 'binary', description: 'Arquivo opcional')
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(response: 201, description: 'Mensagem criada'),
-            new OA\Response(response: 403, description: 'Sem permissão')
-        ]
-    )]
     public function store(Request $request, $serviceOrderId)
     {
         $order = ServiceOrder::findOrFail($serviceOrderId);
-        
-        // Mesma verificação de acesso (pode enviar mensagem quem tem acesso)
         $user = auth()->user();
-        $hasAccess = $user->is_admin || 
-                     $order->user_id == $user->id || 
-                     ($order->group_id && $user->groups->contains($order->group_id));
-        
-        if (!$hasAccess) {
-            return response()->json(['message' => 'Você não tem permissão para enviar mensagens nesta OS.'], 403);
+
+        if (!$this->canAccessOrder($user, $order)) {
+            return response()->json([
+                'message' => 'Sem permissão para enviar mensagens nesta OS'
+            ], 403);
         }
 
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'message' => 'required|string|max:5000',
-            'attachment' => 'nullable|file|mimes:pdf,jpg,png,doc,docx|max:5120',
+            'attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx,txt|max:10240',
         ]);
 
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Erro de validação',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Salvar anexo
         $path = null;
         if ($request->hasFile('attachment')) {
             $path = $request->file('attachment')->store('message_attachments', 'public');
         }
 
+        // Criar mensagem
         $message = ServiceOrderMessage::create([
             'service_order_id' => $order->id,
             'user_id' => $user->id,
-            'message' => $validated['message'],
+            'message' => $request->message,
             'attachment_path' => $path,
+            'is_system_message' => false,
         ]);
 
-        // (Opcional) Registrar no log de auditoria
-        // \App\Models\AuditLog::log('message_created', 'service_order_messages', $message->id, ['order_id' => $order->id]);
+        $message->load('user');
 
-        // (Opcional) Disparar evento para notificações em tempo real
-        // event(new NewServiceOrderMessage($message));
+        // Enviar notificações
+        $this->sendNotifications($order, $message, $user);
 
-        return response()->json($message->load('user'), 201);
+        return response()->json([
+            'message' => 'Mensagem enviada com sucesso!',
+            'data' => $this->formatMessage($message)
+        ], 201);
     }
 
     /**
-     * Atualizar uma mensagem (apenas o próprio autor ou admin).
+     * Atualizar mensagem
      */
-    #[OA\Put(
-        path: '/api/v1/service-orders/{serviceOrderId}/messages/{messageId}',
-        summary: 'Atualizar mensagem',
-        tags: ['Ordens de Serviço - Mensagens'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'serviceOrderId', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'messageId', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-        ],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                properties: [
-                    new OA\Property(property: 'message', type: 'string', example: 'Mensagem corrigida.')
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(response: 200, description: 'Mensagem atualizada'),
-            new OA\Response(response: 403, description: 'Sem permissão')
-        ]
-    )]
     public function update(Request $request, $serviceOrderId, $messageId)
     {
         $message = ServiceOrderMessage::where('service_order_id', $serviceOrderId)
-                                      ->findOrFail($messageId);
+            ->findOrFail($messageId);
         
         $user = auth()->user();
-        // Só permite editar se for o autor ou admin
-        if (!$user->is_admin && $message->user_id !== $user->id) {
-            return response()->json(['message' => 'Você não pode editar esta mensagem.'], 403);
+
+        // Apenas o autor pode editar
+        if ($message->user_id !== $user->id && !$user->is_admin) {
+            return response()->json([
+                'message' => 'Sem permissão para editar esta mensagem'
+            ], 403);
         }
 
-        $validated = $request->validate([
+        // Não permite editar mensagens do sistema
+        if ($message->is_system_message) {
+            return response()->json([
+                'message' => 'Não é possível editar mensagens do sistema'
+            ], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
             'message' => 'required|string|max:5000',
         ]);
 
-        $message->message = $validated['message'];
-        $message->save();
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Erro de validação',
+                'errors' => $validator->errors()
+            ], 422);
+        }
 
-        return response()->json($message->load('user'));
+        $message->update([
+            'message' => $request->message
+        ]);
+
+        return response()->json([
+            'message' => 'Mensagem atualizada com sucesso!',
+            'data' => $this->formatMessage($message)
+        ]);
     }
 
     /**
-     * Excluir uma mensagem (apenas admin ou autor).
+     * Marcar mensagem como lida
      */
-    #[OA\Delete(
-        path: '/api/v1/service-orders/{serviceOrderId}/messages/{messageId}',
-        summary: 'Excluir mensagem',
-        tags: ['Ordens de Serviço - Mensagens'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'serviceOrderId', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
-            new OA\Parameter(name: 'messageId', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'Mensagem excluída'),
-            new OA\Response(response: 403, description: 'Sem permissão')
-        ]
-    )]
+    public function markAsRead($serviceOrderId, $messageId)
+    {
+        $message = ServiceOrderMessage::where('service_order_id', $serviceOrderId)
+            ->findOrFail($messageId);
+        
+        $user = auth()->user();
+
+        // Verificar permissão
+        $order = $message->serviceOrder;
+        if (!$this->canAccessOrder($user, $order)) {
+            return response()->json([
+                'message' => 'Sem permissão'
+            ], 403);
+        }
+
+        $message->markAsRead();
+
+        return response()->json([
+            'message' => 'Mensagem marcada como lida'
+        ]);
+    }
+
+    /**
+     * Excluir mensagem
+     */
     public function destroy($serviceOrderId, $messageId)
     {
         $message = ServiceOrderMessage::where('service_order_id', $serviceOrderId)
-                                      ->findOrFail($messageId);
+            ->findOrFail($messageId);
         
         $user = auth()->user();
-        if (!$user->is_admin && $message->user_id !== $user->id) {
-            return response()->json(['message' => 'Você não pode excluir esta mensagem.'], 403);
+
+        // Apenas autor ou admin
+        if ($message->user_id !== $user->id && !$user->is_admin) {
+            return response()->json([
+                'message' => 'Sem permissão para excluir esta mensagem'
+            ], 403);
         }
 
-        // Remove anexo se existir
-        if ($message->attachment_path) {
+        // Remover anexo
+        if ($message->attachment_path && Storage::disk('public')->exists($message->attachment_path)) {
             Storage::disk('public')->delete($message->attachment_path);
         }
 
         $message->delete();
 
-        return response()->json(['message' => 'Mensagem removida com sucesso.']);
+        return response()->json([
+            'message' => 'Mensagem excluída com sucesso'
+        ]);
+    }
+
+    // ========== MÉTODOS PRIVADOS ==========
+
+    private function canAccessOrder($user, $order)
+    {
+        // Admin tem acesso total
+        if ($user->is_admin) {
+            return true;
+        }
+
+        // Solicitante
+        if ($order->user_id === $user->id) {
+            return true;
+        }
+
+        // Técnico
+        if ($order->technician_id === $user->id) {
+            return true;
+        }
+
+        // Membro do grupo
+        if ($order->group_id) {
+            $groupIds = $user->groups->pluck('id')->toArray();
+            if (in_array($order->group_id, $groupIds)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function sendNotifications($order, $message, $sender)
+    {
+        $recipients = collect();
+
+        // Solicitante (se não for o remetente)
+        if ($order->user_id !== $sender->id && $order->user) {
+            $recipients->push($order->user);
+        }
+
+        // Técnico (se houver e não for o remetente)
+        if ($order->technician_id && $order->technician_id !== $sender->id && $order->technician) {
+            $recipients->push($order->technician);
+        }
+
+        // Administradores
+        $admins = User::where('is_admin', true)
+            ->where('id', '!=', $sender->id)
+            ->get();
+        $recipients = $recipients->merge($admins);
+
+        // Membros do grupo
+        if ($order->group_id) {
+            $members = User::whereHas('groups', function($query) use ($order) {
+                $query->where('groups.id', $order->group_id);
+            })
+            ->where('id', '!=', $sender->id)
+            ->get();
+            $recipients = $recipients->merge($members);
+        }
+
+        // Remover duplicados
+        $recipients = $recipients->unique('id');
+
+        foreach ($recipients as $recipient) {
+            try {
+                $recipient->notify(new NewMessageNotification($order, $message, $sender));
+            } catch (\Exception $e) {
+                \Log::error('Erro ao enviar notificação de mensagem', [
+                    'recipient_id' => $recipient->id,
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+    }
+
+    private function formatMessage($message)
+    {
+        return [
+            'id' => $message->id,
+            'user_id' => $message->user_id,
+            'user_name' => $message->user ? $message->user->name : 'Sistema',
+            'user_email' => $message->user ? $message->user->email : null,
+            'user_avatar' => $message->user && $message->user->avatar ? Storage::url($message->user->avatar) : null,
+            'message' => $message->message,
+            'is_system_message' => (bool) $message->is_system_message,
+            'has_attachment' => $message->hasAttachment(),
+            'attachment_url' => $message->attachment_url,
+            'attachment_info' => $message->getAttachmentInfo(),
+            'is_read' => $message->is_read,
+            'created_at' => $message->formatted_date,
+            'created_at_human' => $message->created_at->diffForHumans(),
+            'updated_at' => $message->updated_at->format('d/m/Y H:i'),
+        ];
     }
 }
