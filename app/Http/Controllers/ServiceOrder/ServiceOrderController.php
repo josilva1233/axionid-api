@@ -296,18 +296,20 @@ class ServiceOrderController extends Controller
         return response()->json(['message' => 'Ordem de serviço excluída com sucesso.'], 200);
     }
 
+    // ================================================================
+    // 🔥 MÉTODO: Buscar grupos disponíveis para o formulário (CORRIGIDO)
+    // ================================================================
     public function getAvailableGroups(Request $request)
     {
         try {
             $user = auth()->user();
             
+            // 🔥 REMOVENDO O FILTRO is_active (coluna não existe)
             if ($user->is_admin) {
-                $groups = Group::where('is_active', true)
-                    ->orderBy('name')
+                $groups = Group::orderBy('name')
                     ->get(['id', 'name', 'description']);
             } else {
                 $groups = $user->groups()
-                    ->where('is_active', true)
                     ->orderBy('name')
                     ->get(['id', 'name', 'description']);
             }
@@ -327,16 +329,14 @@ class ServiceOrderController extends Controller
     }
 
     // ================================================================
-    // 🔥 MÉTODOS DE NOTIFICAÇÃO - CORRIGIDOS
+    // 🔥 MÉTODOS DE NOTIFICAÇÃO
     // ================================================================
 
     /**
      * 🔥 ENVIAR NOTIFICAÇÃO DE NOVO CHAMADO
-     * CORRIGIDO: Envia para o solicitante também
      */
     private function sendNewOrderNotification($order)
     {
-        // 🔥 RECARREGAR O ORDER COM TODOS OS RELACIONAMENTOS
         $order = ServiceOrder::with(['user', 'technician', 'group'])->find($order->id);
         
         if (!$order) {
@@ -366,7 +366,6 @@ class ServiceOrderController extends Controller
             'has_attachment' => !empty($order->attachment_path),
         ];
 
-        // 🔥 CORRIGIDO: Usar método que inclui o solicitante
         $recipients = $this->getAllRecipientsForNewOrder($order, $sender);
 
         Log::info('📢 Destinatários encontrados:', [
@@ -459,12 +458,11 @@ class ServiceOrderController extends Controller
             'has_user' => $order->user ? 'Sim' : 'Não'
         ]);
 
-        // 1. 🔥 SOLICITANTE - TENTATIVA 1: via relacionamento
+        // 1. 🔥 SOLICITANTE
         if ($order->user) {
             $recipients->push($order->user);
             Log::info('📌 Solicitante incluso (via relacionamento):', ['email' => $order->user->email]);
         } else {
-            // 🔥 TENTATIVA 2: buscar diretamente pelo user_id
             $user = User::find($order->user_id);
             if ($user) {
                 $recipients->push($user);
@@ -477,7 +475,7 @@ class ServiceOrderController extends Controller
             }
         }
 
-        // 2. Técnico (se houver e não for o mesmo)
+        // 2. Técnico
         if ($order->technician && $order->technician->id !== $sender->id) {
             $recipients->push($order->technician);
             Log::info('🔧 Técnico incluso:', ['email' => $order->technician->email]);
