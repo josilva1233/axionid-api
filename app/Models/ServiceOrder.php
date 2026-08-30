@@ -20,11 +20,13 @@ class ServiceOrder extends Model
         'technician_id',
         'status',
         'priority',
+        'resolved_at',
     ];
 
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'resolved_at' => 'datetime',
     ];
 
     // Status possíveis
