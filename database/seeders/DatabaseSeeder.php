@@ -55,7 +55,7 @@ class DatabaseSeeder extends Seeder
         $group = Group::create([
             'name' => 'Administradores',
             'description' => 'Grupo de administradores do sistema',
-            'is_default' => true,
+            //'is_default' => true,
         ]);
 
         // Adicionar admin ao grupo
