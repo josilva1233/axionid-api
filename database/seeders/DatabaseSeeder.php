@@ -41,13 +41,13 @@ class DatabaseSeeder extends Seeder
         // 🔥 ENDEREÇO PARA O ADMIN
         Address::create([
             'user_id' => $admin->id,
-            'zip_code' => '12345-678',
-            'street' => 'Rua das Flores',
-            'number' => '123',
-            'neighborhood' => 'Centro',
-            'city' => 'São Paulo',
-            'state' => 'SP',
-            'complement' => 'Apto 101',
+            'zip_code' => '25230274',
+            'street' => 'Rua Afonso Costa',
+            'number' => 'SN',
+            'neighborhood' => 'Pilar',
+            'city' => 'Duque de Caxias',
+            'state' => 'RJ',
+            'complement' => 'LT 23 QD 27',
         ]);
         $this->command->info('✅ Endereço criado');
 
