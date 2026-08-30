@@ -56,6 +56,7 @@ class DatabaseSeeder extends Seeder
             'name' => 'Administradores',
             'description' => 'Grupo de administradores do sistema',
             //'is_default' => true,
+            'creator_id' => $admin->id,
         ]);
 
         // Adicionar admin ao grupo
