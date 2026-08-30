@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\AuditLogController;
 use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\ServiceOrder\ServiceOrderController;
 use App\Http\Controllers\ServiceOrder\ServiceOrderMessageController;
+use App\Http\Controllers\Auth\TermController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/auth/google', [SocialAuthController::class, 'redirectToGoogle']);
     Route::get('/auth/google/callback', [SocialAuthController::class, 'handleGoogleCallback']);
     
+    // --- Termos de Uso (Público) ---
+    Route::get('/terms/current', [TermController::class, 'getCurrentTerm']);
+    
     // --- Rotas Protegidas (Sanctum) ---
     Route::middleware('auth:sanctum')->group(function () {
         
@@ -38,11 +42,14 @@ Route::prefix('v1')->group(function () {
             return $request->user()->load('address');
         });
 
-            //NOVA ROTA: PERMISSÕES DO USUÁRIO LOGADO
+        // NOVA ROTA: PERMISSÕES DO USUÁRIO LOGADO
         Route::get('/me/permissions', [AxionAuthController::class, 'getMyPermissions']);
 
-
         Route::get('/users/find-by-email/{email}', [AxionAuthController::class, 'findByEmail']);
+
+        // --- Termos de Uso (Autenticado) ---
+        Route::get('/terms/check', [TermController::class, 'checkStatus']);
+        Route::post('/terms/accept', [TermController::class, 'accept']);
 
         // --- Módulo de Grupos ---
         Route::prefix('groups')->group(function () {
@@ -119,23 +126,15 @@ Route::prefix('v1')->group(function () {
 
             // --- Gestão de Auditoria ---
             Route::get('/audit-logs', [AuditLogController::class, 'index']);
-        });
-    });
-        // --- Termos de Uso (Público) ---
-    Route::get('/terms/current', [TermController::class, 'getCurrentTerm']);
-    
-    // --- Termos de Uso (Autenticado) ---
-    Route::middleware('auth:sanctum')->group(function () {
-        Route::get('/terms/check', [TermController::class, 'checkStatus']);
-        Route::post('/terms/accept', [TermController::class, 'accept']);
-    });
 
-    // --- Termos de Uso (Admin) ---
-    Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/terms')->group(function () {
-        Route::get('/', [TermController::class, 'index']);
-        Route::post('/', [TermController::class, 'store']);
-        Route::put('/{id}', [TermController::class, 'update']);
-        Route::delete('/{id}', [TermController::class, 'destroy']);
-        Route::patch('/{id}/toggle', [TermController::class, 'toggleStatus']);
+            // --- Termos de Uso (Admin) ---
+            Route::prefix('terms')->group(function () {
+                Route::get('/', [TermController::class, 'index']);
+                Route::post('/', [TermController::class, 'store']);
+                Route::put('/{id}', [TermController::class, 'update']);
+                Route::delete('/{id}', [TermController::class, 'destroy']);
+                Route::patch('/{id}/toggle', [TermController::class, 'toggleStatus']);
+            });
+        });
     });
 });
