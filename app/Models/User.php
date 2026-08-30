@@ -187,4 +187,32 @@ class User extends Authenticatable
     {
         return (bool) $this->is_active;
     }
+
+        public function termAcceptances()
+    {
+        return $this->hasMany(UserTermAcceptance::class);
+    }
+
+    public function hasAcceptedCurrentTerm(): bool
+    {
+        $currentTerm = Term::getActiveTerm();
+        
+        if (!$currentTerm) {
+            return true; // Se não há termo ativo, considera que aceitou
+        }
+
+        return $currentTerm->acceptances()
+            ->where('user_id', $this->id)
+            ->exists();
+    }
+
+    public function acceptTerm(Term $term, ?string $ip = null, ?string $userAgent = null): UserTermAcceptance
+    {
+        return $this->termAcceptances()->create([
+            'term_id' => $term->id,
+            'ip_address' => $ip,
+            'user_agent' => $userAgent,
+            'accepted_at' => now(),
+        ]);
+    }
 }

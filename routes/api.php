@@ -65,7 +65,7 @@ Route::prefix('v1')->group(function () {
             Route::put('/{id}', [ServiceOrderController::class, 'update']);
             Route::delete('/{id}', [ServiceOrderController::class, 'destroy']);
             
-            // 🔥 NOVA ROTA: Buscar grupos disponíveis para o formulário
+            // NOVA ROTA: Buscar grupos disponíveis para o formulário
             Route::get('/groups/available', [ServiceOrderController::class, 'getAvailableGroups']);
             
             // --- ROTAS DE MENSAGENS (aninhadas corretamente) ---
@@ -120,5 +120,22 @@ Route::prefix('v1')->group(function () {
             // --- Gestão de Auditoria ---
             Route::get('/audit-logs', [AuditLogController::class, 'index']);
         });
+    });
+        // --- Termos de Uso (Público) ---
+    Route::get('/terms/current', [TermController::class, 'getCurrentTerm']);
+    
+    // --- Termos de Uso (Autenticado) ---
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/terms/check', [TermController::class, 'checkStatus']);
+        Route::post('/terms/accept', [TermController::class, 'accept']);
+    });
+
+    // --- Termos de Uso (Admin) ---
+    Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/terms')->group(function () {
+        Route::get('/', [TermController::class, 'index']);
+        Route::post('/', [TermController::class, 'store']);
+        Route::put('/{id}', [TermController::class, 'update']);
+        Route::delete('/{id}', [TermController::class, 'destroy']);
+        Route::patch('/{id}/toggle', [TermController::class, 'toggleStatus']);
     });
 });
