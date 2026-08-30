@@ -129,11 +129,18 @@ Route::prefix('v1')->group(function () {
 
             // --- Termos de Uso (Admin) ---
             Route::prefix('terms')->group(function () {
+                // Gestão de Termos
                 Route::get('/', [TermController::class, 'index']);
                 Route::post('/', [TermController::class, 'store']);
                 Route::put('/{id}', [TermController::class, 'update']);
                 Route::delete('/{id}', [TermController::class, 'destroy']);
                 Route::patch('/{id}/toggle', [TermController::class, 'toggleStatus']);
+                
+                // 🔥 NOVAS ROTAS: Visualização de Aceitações
+                Route::get('/acceptances', [TermController::class, 'acceptances']);
+                Route::get('/acceptances/pending', [TermController::class, 'pendingAcceptances']);
+                Route::get('/acceptances/stats', [TermController::class, 'acceptanceStats']);
+                Route::get('/acceptances/export/{termId}', [TermController::class, 'exportAcceptances']);
             });
         });
     });

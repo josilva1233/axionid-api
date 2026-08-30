@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Term;
 use App\Models\User;
+use App\Models\UserTermAcceptance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -264,7 +265,7 @@ class TermController extends Controller
         $term = Term::findOrFail($id);
 
         // Não permite excluir um termo que já foi aceito
-        if ($term->acceptances()->count() > 0) {
+        if ($term->userTermAcceptances()->count() > 0) {
             return response()->json([
                 'message' => 'Não é possível excluir um termo que já foi aceito por usuários',
             ], 422);
@@ -306,5 +307,178 @@ class TermController extends Controller
             'message' => 'Status do termo atualizado',
             'is_active' => $term->is_active,
         ]);
+    }
+
+    // =========================================================
+    // ADMIN: Visualização de Aceitações
+    // =========================================================
+
+    /**
+     * Listar usuários que aceitaram os termos (Admin)
+     */
+    public function acceptances(Request $request)
+    {
+        if (!Auth::user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado'], 403);
+        }
+
+        $query = UserTermAcceptance::with(['user', 'term'])
+            ->when($request->term_id, function ($q) use ($request) {
+                return $q->where('term_id', $request->term_id);
+            })
+            ->when($request->search, function ($q) use ($request) {
+                return $q->whereHas('user', function ($query) use ($request) {
+                    $query->where('name', 'like', "%{$request->search}%")
+                          ->orWhere('email', 'like', "%{$request->search}%");
+                });
+            })
+            ->latest('accepted_at');
+
+        $acceptances = $query->paginate(15);
+
+        // Buscar todos os termos para o filtro
+        $terms = Term::orderBy('version', 'desc')->get();
+
+        return response()->json([
+            'data' => $acceptances->items(),
+            'meta' => [
+                'current_page' => $acceptances->currentPage(),
+                'last_page' => $acceptances->lastPage(),
+                'per_page' => $acceptances->perPage(),
+                'total' => $acceptances->total(),
+            ],
+            'terms' => $terms,
+        ]);
+    }
+
+    /**
+     * Listar usuários que NÃO aceitaram o termo atual (Admin)
+     */
+    public function pendingAcceptances(Request $request)
+    {
+        if (!Auth::user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado'], 403);
+        }
+
+        $currentTerm = Term::getActiveTerm();
+
+        if (!$currentTerm) {
+            return response()->json([
+                'message' => 'Nenhum termo ativo'
+            ], 404);
+        }
+
+        $users = User::whereDoesntHave('userTermAcceptances', function ($q) use ($currentTerm) {
+            $q->where('term_id', $currentTerm->id);
+        })
+        ->when($request->search, function ($q) use ($request) {
+            $q->where('name', 'like', "%{$request->search}%")
+              ->orWhere('email', 'like', "%{$request->search}%");
+        })
+        ->paginate(15);
+
+        return response()->json([
+            'data' => $users->items(),
+            'meta' => [
+                'current_page' => $users->currentPage(),
+                'last_page' => $users->lastPage(),
+                'per_page' => $users->perPage(),
+                'total' => $users->total(),
+            ],
+            'term' => $currentTerm,
+        ]);
+    }
+
+    /**
+     * Estatísticas de aceitação (Admin)
+     */
+    public function acceptanceStats()
+    {
+        if (!Auth::user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado'], 403);
+        }
+
+        $totalUsers = User::count();
+        $currentTerm = Term::getActiveTerm();
+
+        $stats = [
+            'total_users' => $totalUsers,
+        ];
+
+        if ($currentTerm) {
+            $acceptedCount = UserTermAcceptance::where('term_id', $currentTerm->id)->count();
+            $stats['current_term'] = [
+                'id' => $currentTerm->id,
+                'version' => $currentTerm->version,
+                'accepted_count' => $acceptedCount,
+                'pending_count' => max(0, $totalUsers - $acceptedCount),
+                'acceptance_rate' => $totalUsers > 0 
+                    ? round(($acceptedCount / $totalUsers) * 100, 2) 
+                    : 0,
+            ];
+        }
+
+        // Estatísticas por termo
+        $termsStats = Term::withCount('userTermAcceptances')
+            ->orderBy('version', 'desc')
+            ->get()
+            ->map(function ($term) use ($totalUsers) {
+                return [
+                    'id' => $term->id,
+                    'version' => $term->version,
+                    'is_active' => $term->is_active,
+                    'accepted_count' => $term->user_term_acceptances_count,
+                    'acceptance_rate' => $totalUsers > 0 
+                        ? round(($term->user_term_acceptances_count / $totalUsers) * 100, 2) 
+                        : 0,
+                ];
+            });
+
+        $stats['terms_stats'] = $termsStats;
+
+        return response()->json($stats);
+    }
+
+    /**
+     * Exportar lista de usuários que aceitaram um termo (CSV)
+     */
+    public function exportAcceptances($termId)
+    {
+        if (!Auth::user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado'], 403);
+        }
+
+        $term = Term::findOrFail($termId);
+
+        $acceptances = UserTermAcceptance::with(['user'])
+            ->where('term_id', $termId)
+            ->get();
+
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=usuarios_aceitaram_termo_v{$term->version}.csv",
+        ];
+
+        $callback = function() use ($acceptances) {
+            $handle = fopen('php://output', 'w');
+            
+            // Cabeçalhos
+            fputcsv($handle, ['ID', 'Nome', 'Email', 'Data de Aceitação', 'IP', 'User Agent']);
+
+            foreach ($acceptances as $acceptance) {
+                fputcsv($handle, [
+                    $acceptance->user->id,
+                    $acceptance->user->name,
+                    $acceptance->user->email,
+                    $acceptance->accepted_at?->format('d/m/Y H:i:s') ?? 'N/A',
+                    $acceptance->ip_address ?? 'N/A',
+                    $acceptance->user_agent ?? 'N/A',
+                ]);
+            }
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 }
