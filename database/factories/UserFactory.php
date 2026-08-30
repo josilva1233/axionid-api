@@ -23,10 +23,10 @@ class UserFactory extends Factory
      */
     public function definition(): array
     {
-        // 🔥 CORRIGIDO: Usar fake() helper function do Laravel 10+
+        $faker = \Faker\Factory::create(); // 🔥 ALTERNATIVA
         return [
-            'name' => fake()->name(),
-            'email' => fake()->unique()->safeEmail(),
+            'name' => $faker->name(),
+            'email' => $faker->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
