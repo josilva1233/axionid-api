@@ -34,6 +34,8 @@ Route::prefix('v1')->group(function () {
     // --- Rotas Protegidas (Sanctum) ---
     Route::middleware('auth:sanctum')->group(function () {
         
+        Route::put('/theme', [AxionAuthController::class, 'updateTheme']);
+        
         Route::post('/logout', [AxionAuthController::class, 'logout']);
         Route::post('/complete-profile', [SocialAuthController::class, 'completeProfile']); 
         Route::put('/update-profile', [AxionAuthController::class, 'updateProfile']); 

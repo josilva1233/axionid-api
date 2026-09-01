@@ -26,6 +26,7 @@ class User extends Authenticatable
         'govbr_id',
         'is_active',
         'from_google',
+        'theme_preference',
     ];
 
     /**

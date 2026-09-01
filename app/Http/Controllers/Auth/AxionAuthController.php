@@ -583,4 +583,25 @@ class AxionAuthController extends Controller
             ], 500);
         }
     }
+    /**
+/**
+ * Atualizar preferência de tema do usuário logado
+ * PUT /api/v1/theme
+ */
+public function updateTheme(Request $request)
+{
+    $request->validate([
+        'theme' => 'required|in:dark,light',
+    ]);
+
+    $user = Auth::user();
+    $user->theme_preference = $request->theme;
+    $user->save();
+
+    return response()->json([
+        'message' => 'Tema atualizado com sucesso!',
+        'theme'   => $user->theme_preference,
+    ]);
+}
+
 }
