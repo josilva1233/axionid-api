@@ -265,7 +265,7 @@ class TermController extends Controller
         $term = Term::findOrFail($id);
 
         // Não permite excluir um termo que já foi aceito
-        if ($term->userTermAcceptances()->count() > 0) {
+        if ($term->acceptances()->count() > 0) {
             return response()->json([
                 'message' => 'Não é possível excluir um termo que já foi aceito por usuários',
             ], 422);
