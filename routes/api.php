@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\ServiceOrder\ServiceOrderController;
 use App\Http\Controllers\ServiceOrder\ServiceOrderMessageController;
 use App\Http\Controllers\Auth\TermController;
+use App\Http\Controllers\ChatReportController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
