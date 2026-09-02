@@ -34,6 +34,11 @@ Route::prefix('v1')->group(function () {
     // --- Rotas Protegidas (Sanctum) ---
     Route::middleware('auth:sanctum')->group(function () {
 
+        // Chat de Relatórios
+        Route::get('/ai/status', [ChatReportController::class, 'status']);
+        Route::post('/ai/chat', [ChatReportController::class, 'chat']);
+        Route::delete('/ai/history', [ChatReportController::class, 'clearHistory']);
+
         Route::put('/theme', [AxionAuthController::class, 'updateTheme']);
         
         Route::post('/logout', [AxionAuthController::class, 'logout']);
@@ -87,10 +92,6 @@ Route::prefix('v1')->group(function () {
             });
         });
 
-// --- Chat de Relatórios (usuários autenticados) ---
-Route::get('/ai/status', [ChatReportController::class, 'status']);
-Route::post('/ai/chat', [ChatReportController::class, 'chat']);
-Route::delete('/ai/history', [ChatReportController::class, 'clearHistory']);
 
         // =========================================================
         // --- Módulo Administrativo (Super Admin) ---
