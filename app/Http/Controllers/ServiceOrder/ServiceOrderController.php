@@ -16,6 +16,7 @@ use OpenApi\Attributes as OA;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
+#[OA\Tag(name: 'Ordens de Serviço', description: 'Gerenciamento de chamados e ordens de serviço')]
 class ServiceOrderController extends Controller
 {
     #[OA\Get(
@@ -76,7 +77,18 @@ class ServiceOrderController extends Controller
             )
         ],
         responses: [
-            new OA\Response(response: 200, description: 'Lista de OS recuperada com sucesso'),
+            new OA\Response(
+                response: 200,
+                description: 'Lista de OS recuperada com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'current_page', type: 'integer'),
+                        new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/ServiceOrder')),
+                        new OA\Property(property: 'last_page', type: 'integer'),
+                        new OA\Property(property: 'total', type: 'integer'),
+                    ]
+                )
+            ),
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
@@ -146,7 +158,11 @@ class ServiceOrderController extends Controller
             )
         ),
         responses: [
-            new OA\Response(response: 201, description: 'OS criada com sucesso'),
+            new OA\Response(
+                response: 201,
+                description: 'OS criada com sucesso',
+                content: new OA\JsonContent(ref: '#/components/schemas/ServiceOrder')
+            ),
             new OA\Response(response: 422, description: 'Erro de validação')
         ]
     )]
@@ -188,6 +204,41 @@ class ServiceOrderController extends Controller
         return response()->json($os, 201);
     }
 
+    #[OA\Get(
+        path: '/api/v1/service-orders/{id}',
+        summary: 'Obter detalhes de uma Ordem de Serviço',
+        tags: ['Ordens de Serviço'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'id',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da ordem de serviço'
+            )
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Detalhes da OS',
+                content: new OA\JsonContent(ref: '#/components/schemas/ServiceOrder')
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado'),
+            new OA\Response(response: 404, description: 'OS não encontrada')
+        ]
+    )]
+    public function show($id)
+    {
+        $order = ServiceOrder::with(['user', 'group', 'technician'])->find($id);
+
+        if (!$order) {
+            return response()->json(['message' => 'Ordem de serviço não encontrada'], 404);
+        }
+
+        return response()->json($order);
+    }
+
     #[OA\Put(
         path: '/api/v1/service-orders/{id}',
         summary: 'Atualizar/Atender Ordem de Serviço',
@@ -195,17 +246,32 @@ class ServiceOrderController extends Controller
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+            new OA\Parameter(
+                name: 'id',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da ordem de serviço'
+            )
         ],
-        requestBody: new OA\JsonContent(
-            properties: [
-                new OA\Property(property: 'status', type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled']),
-                new OA\Property(property: 'technician_notes', type: 'string', example: 'Troca de cabo realizada com sucesso.')
-            ]
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'status', type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'], example: 'in_progress'),
+                    new OA\Property(property: 'technician_notes', type: 'string', example: 'Troca de cabo realizada com sucesso.'),
+                    new OA\Property(property: 'technician_id', type: 'integer', nullable: true, example: 5)
+                ]
+            )
         ),
         responses: [
-            new OA\Response(response: 200, description: 'OS atualizada'),
-            new OA\Response(response: 403, description: 'Sem permissão')
+            new OA\Response(
+                response: 200,
+                description: 'OS atualizada com sucesso',
+                content: new OA\JsonContent(ref: '#/components/schemas/ServiceOrder')
+            ),
+            new OA\Response(response: 403, description: 'Sem permissão'),
+            new OA\Response(response: 404, description: 'OS não encontrada')
         ]
     )]
     public function update(Request $request, $id)
@@ -253,17 +319,6 @@ class ServiceOrderController extends Controller
         return response()->json($os);
     }
 
-    public function show($id)
-    {
-        $order = ServiceOrder::with(['user', 'group', 'technician'])->find($id);
-
-        if (!$order) {
-            return response()->json(['message' => 'Ordem de serviço não encontrada'], 404);
-        }
-
-        return response()->json($order);
-    }
-
     #[OA\Delete(
         path: '/api/v1/service-orders/{id}',
         summary: 'Excluir Ordem de Serviço',
@@ -271,10 +326,24 @@ class ServiceOrderController extends Controller
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+            new OA\Parameter(
+                name: 'id',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da ordem de serviço'
+            )
         ],
         responses: [
-            new OA\Response(response: 200, description: 'OS excluída com sucesso'),
+            new OA\Response(
+                response: 200,
+                description: 'OS excluída com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string', example: 'Ordem de serviço excluída com sucesso.')
+                    ]
+                )
+            ),
             new OA\Response(response: 403, description: 'Sem permissão'),
             new OA\Response(response: 404, description: 'OS não encontrada')
         ]
@@ -297,14 +366,41 @@ class ServiceOrderController extends Controller
     }
 
     // ================================================================
-    // 🔥 MÉTODO: Buscar grupos disponíveis para o formulário (CORRIGIDO)
+    // 🔥 MÉTODO: Buscar grupos disponíveis para o formulário
     // ================================================================
+
+    #[OA\Get(
+        path: '/api/v1/service-orders/groups/available',
+        summary: 'Listar grupos disponíveis para criação de OS',
+        description: 'Retorna os grupos que o usuário pode selecionar ao abrir um chamado. Admins veem todos os grupos.',
+        tags: ['Ordens de Serviço'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Lista de grupos disponíveis',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'data', type: 'array', items: new OA\Items(
+                            properties: [
+                                new OA\Property(property: 'id', type: 'integer'),
+                                new OA\Property(property: 'name', type: 'string'),
+                                new OA\Property(property: 'description', type: 'string', nullable: true),
+                            ]
+                        )),
+                        new OA\Property(property: 'total', type: 'integer'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado'),
+            new OA\Response(response: 500, description: 'Erro interno')
+        ]
+    )]
     public function getAvailableGroups(Request $request)
     {
         try {
             $user = auth()->user();
             
-            // 🔥 REMOVENDO O FILTRO is_active (coluna não existe)
             if ($user->is_admin) {
                 $groups = Group::orderBy('name')
                     ->get(['id', 'name', 'description']);
@@ -329,11 +425,11 @@ class ServiceOrderController extends Controller
     }
 
     // ================================================================
-    // 🔥 MÉTODOS DE NOTIFICAÇÃO
+    // 🔥 MÉTODOS DE NOTIFICAÇÃO (Privados - sem documentação Swagger)
     // ================================================================
 
     /**
-     * 🔥 ENVIAR NOTIFICAÇÃO DE NOVO CHAMADO
+     * Enviar notificação de novo chamado
      */
     private function sendNewOrderNotification($order)
     {
@@ -446,7 +542,7 @@ class ServiceOrderController extends Controller
     }
 
     /**
-     * 🔥 BUSCAR DESTINATÁRIOS PARA NOVO CHAMADO (INCLUI O SOLICITANTE)
+     * Buscar destinatários para novo chamado (inclui o solicitante)
      */
     private function getAllRecipientsForNewOrder($order, $sender)
     {
@@ -458,7 +554,7 @@ class ServiceOrderController extends Controller
             'has_user' => $order->user ? 'Sim' : 'Não'
         ]);
 
-        // 1. 🔥 SOLICITANTE
+        // 1. Solicitante
         if ($order->user) {
             $recipients->push($order->user);
             Log::info('📌 Solicitante incluso (via relacionamento):', ['email' => $order->user->email]);
@@ -509,7 +605,7 @@ class ServiceOrderController extends Controller
     }
 
     /**
-     * 🔥 BUSCAR DESTINATÁRIOS PARA OUTROS EVENTOS (EXCLUI O REMETENTE)
+     * Buscar destinatários para outros eventos (exclui o remetente)
      */
     private function getAllRecipients($order, $sender)
     {

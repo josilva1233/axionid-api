@@ -11,12 +11,41 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use OpenApi\Attributes as OA;
 
+#[OA\Tag(name: 'Termos de Uso', description: 'Gerenciamento de termos de uso e aceitações')]
 class TermController extends Controller
 {
     /**
      * Verifica se o usuário precisa aceitar os termos
      */
+    #[OA\Get(
+        path: '/api/v1/terms/check',
+        summary: 'Verificar necessidade de aceitação dos termos',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Status atual do usuário em relação aos termos',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'authenticated', type: 'boolean'),
+                        new OA\Property(property: 'needs_acceptance', type: 'boolean'),
+                        new OA\Property(property: 'term', type: 'object', nullable: true,
+                            properties: [
+                                new OA\Property(property: 'id', type: 'integer'),
+                                new OA\Property(property: 'content', type: 'string'),
+                                new OA\Property(property: 'version', type: 'string'),
+                                new OA\Property(property: 'published_at', type: 'string', format: 'date-time'),
+                            ]
+                        ),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado')
+        ]
+    )]
     public function checkStatus(Request $request)
     {
         $user = Auth::user();
@@ -55,6 +84,35 @@ class TermController extends Controller
     /**
      * Aceitar os termos de uso
      */
+    #[OA\Post(
+        path: '/api/v1/terms/accept',
+        summary: 'Aceitar os termos de uso atuais',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'term_id', type: 'integer', example: 1)
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Termos aceitos com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'accepted', type: 'boolean'),
+                        new OA\Property(property: 'accepted_at', type: 'string', format: 'date-time'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
+    )]
     public function accept(Request $request)
     {
         $user = Auth::user();
@@ -79,7 +137,6 @@ class TermController extends Controller
             ], 422);
         }
 
-        // Verifica se já aceitou este termo específico
         if ($term->isAcceptedByUser($user)) {
             return response()->json([
                 'message' => 'Você já aceitou este termo',
@@ -121,6 +178,26 @@ class TermController extends Controller
     /**
      * Obter termo atual (público)
      */
+    #[OA\Get(
+        path: '/api/v1/terms/current',
+        summary: 'Obter termo de uso ativo (público)',
+        tags: ['Termos de Uso'],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Termo ativo atual',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'id', type: 'integer'),
+                        new OA\Property(property: 'content', type: 'string'),
+                        new OA\Property(property: 'version', type: 'string'),
+                        new OA\Property(property: 'published_at', type: 'string', format: 'date-time'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 404, description: 'Nenhum termo ativo disponível')
+        ]
+    )]
     public function getCurrentTerm()
     {
         $term = Term::getActiveTerm();
@@ -144,6 +221,21 @@ class TermController extends Controller
     /**
      * Listar todos os termos (Admin)
      */
+    #[OA\Get(
+        path: '/api/v1/admin/terms',
+        summary: 'Listar todos os termos (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'page', in: 'query', schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'search', in: 'query', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'is_active', in: 'query', schema: new OA\Schema(type: 'boolean')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Lista paginada de termos'),
+            new OA\Response(response: 403, description: 'Acesso negado')
+        ]
+    )]
     public function index(Request $request)
     {
         if (!Auth::user()->is_admin) {
@@ -166,6 +258,36 @@ class TermController extends Controller
     /**
      * Criar novo termo (Admin)
      */
+    #[OA\Post(
+        path: '/api/v1/admin/terms',
+        summary: 'Criar novo termo de uso (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'content', type: 'string', example: 'Conteúdo do termo...'),
+                    new OA\Property(property: 'version', type: 'string', example: '1.0.0'),
+                    new OA\Property(property: 'is_active', type: 'boolean', example: true),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Termo criado com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'term', type: 'object'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
+    )]
     public function store(Request $request)
     {
         if (!Auth::user()->is_admin) {
@@ -210,6 +332,39 @@ class TermController extends Controller
     /**
      * Atualizar termo (Admin)
      */
+    #[OA\Put(
+        path: '/api/v1/admin/terms/{id}',
+        summary: 'Atualizar termo de uso (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'content', type: 'string', example: 'Conteúdo atualizado...'),
+                    new OA\Property(property: 'version', type: 'string', example: '1.0.1'),
+                    new OA\Property(property: 'is_active', type: 'boolean', example: false),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Termo atualizado com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'term', type: 'object'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
+    )]
     public function update(Request $request, $id)
     {
         if (!Auth::user()->is_admin) {
@@ -256,6 +411,20 @@ class TermController extends Controller
     /**
      * Excluir termo (Admin)
      */
+    #[OA\Delete(
+        path: '/api/v1/admin/terms/{id}',
+        summary: 'Excluir termo de uso (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'Termo excluído com sucesso'),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 422, description: 'Não é possível excluir termo que já foi aceito')
+        ]
+    )]
     public function destroy($id)
     {
         if (!Auth::user()->is_admin) {
@@ -264,7 +433,6 @@ class TermController extends Controller
 
         $term = Term::findOrFail($id);
 
-        // Não permite excluir um termo que já foi aceito
         if ($term->acceptances()->count() > 0) {
             return response()->json([
                 'message' => 'Não é possível excluir um termo que já foi aceito por usuários',
@@ -284,6 +452,28 @@ class TermController extends Controller
     /**
      * Ativar/Desativar termo (Admin)
      */
+    #[OA\Patch(
+        path: '/api/v1/admin/terms/{id}/toggle',
+        summary: 'Ativar/Desativar termo (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Status atualizado',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'is_active', type: 'boolean'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado')
+        ]
+    )]
     public function toggleStatus($id)
     {
         if (!Auth::user()->is_admin) {
@@ -292,7 +482,6 @@ class TermController extends Controller
 
         $term = Term::findOrFail($id);
 
-        // Se for ativar, desativa os outros
         if (!$term->is_active) {
             Term::where('is_active', true)->update(['is_active' => false]);
             $term->update([
@@ -316,6 +505,31 @@ class TermController extends Controller
     /**
      * Listar usuários que aceitaram os termos (Admin)
      */
+    #[OA\Get(
+        path: '/api/v1/admin/terms/acceptances',
+        summary: 'Listar aceitações de termos (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'term_id', in: 'query', schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'search', in: 'query', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'page', in: 'query', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Lista paginada de aceitações',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'data', type: 'array', items: new OA\Items()),
+                        new OA\Property(property: 'meta', type: 'object'),
+                        new OA\Property(property: 'terms', type: 'array', items: new OA\Items()),
+                    ]
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado')
+        ]
+    )]
     public function acceptances(Request $request)
     {
         if (!Auth::user()->is_admin) {
@@ -335,8 +549,6 @@ class TermController extends Controller
             ->latest('accepted_at');
 
         $acceptances = $query->paginate(15);
-
-        // Buscar todos os termos para o filtro
         $terms = Term::orderBy('version', 'desc')->get();
 
         return response()->json([
@@ -354,6 +566,31 @@ class TermController extends Controller
     /**
      * Listar usuários que NÃO aceitaram o termo atual (Admin)
      */
+    #[OA\Get(
+        path: '/api/v1/admin/terms/acceptances/pending',
+        summary: 'Listar usuários pendentes de aceitação (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'search', in: 'query', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'page', in: 'query', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Lista paginada de usuários pendentes',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'data', type: 'array', items: new OA\Items()),
+                        new OA\Property(property: 'meta', type: 'object'),
+                        new OA\Property(property: 'term', type: 'object'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 404, description: 'Nenhum termo ativo')
+        ]
+    )]
     public function pendingAcceptances(Request $request)
     {
         if (!Auth::user()->is_admin) {
@@ -392,6 +629,26 @@ class TermController extends Controller
     /**
      * Estatísticas de aceitação (Admin)
      */
+    #[OA\Get(
+        path: '/api/v1/admin/terms/acceptances/stats',
+        summary: 'Obter estatísticas de aceitação (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Estatísticas de aceitação',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'total_users', type: 'integer'),
+                        new OA\Property(property: 'current_term', type: 'object'),
+                        new OA\Property(property: 'terms_stats', type: 'array', items: new OA\Items()),
+                    ]
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado')
+        ]
+    )]
     public function acceptanceStats()
     {
         if (!Auth::user()->is_admin) {
@@ -418,7 +675,6 @@ class TermController extends Controller
             ];
         }
 
-        // Estatísticas por termo
         $termsStats = Term::withCount('userTermAcceptances')
             ->orderBy('version', 'desc')
             ->get()
@@ -442,6 +698,26 @@ class TermController extends Controller
     /**
      * Exportar lista de usuários que aceitaram um termo (CSV)
      */
+    #[OA\Get(
+        path: '/api/v1/admin/terms/acceptances/export/{termId}',
+        summary: 'Exportar aceitações de um termo (CSV) (Admin)',
+        tags: ['Termos de Uso'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'termId', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Arquivo CSV com a lista de usuários que aceitaram o termo',
+                content: new OA\MediaType(
+                    mediaType: 'text/csv'
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 404, description: 'Termo não encontrado')
+        ]
+    )]
     public function exportAcceptances($termId)
     {
         if (!Auth::user()->is_admin) {
@@ -462,7 +738,6 @@ class TermController extends Controller
         $callback = function() use ($acceptances) {
             $handle = fopen('php://output', 'w');
             
-            // Cabeçalhos
             fputcsv($handle, ['ID', 'Nome', 'Email', 'Data de Aceitação', 'IP', 'User Agent']);
 
             foreach ($acceptances as $acceptance) {

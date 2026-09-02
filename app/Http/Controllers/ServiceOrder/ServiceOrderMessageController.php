@@ -11,12 +11,64 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use OpenApi\Attributes as OA;
 
+#[OA\Tag(name: 'Mensagens de OS', description: 'Gerenciamento de mensagens em ordens de serviço')]
 class ServiceOrderMessageController extends Controller
 {
-    /**
-     * Listar mensagens da OS
-     */
+    #[OA\Get(
+        path: '/api/v1/service-orders/{serviceOrderId}/messages',
+        summary: 'Listar mensagens da OS',
+        description: 'Retorna todas as mensagens de uma ordem de serviço, com paginação e informações de leitura.',
+        tags: ['Mensagens de OS'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'serviceOrderId',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da ordem de serviço'
+            ),
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                schema: new OA\Schema(type: 'integer', default: 1)
+            ),
+            new OA\Parameter(
+                name: 'per_page',
+                in: 'query',
+                schema: new OA\Schema(type: 'integer', default: 20)
+            )
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Mensagens recuperadas com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'service_order', type: 'object'),
+                        new OA\Property(property: 'messages', type: 'array', items: new OA\Items(
+                            properties: [
+                                new OA\Property(property: 'id', type: 'integer'),
+                                new OA\Property(property: 'user_id', type: 'integer'),
+                                new OA\Property(property: 'user', type: 'object'),
+                                new OA\Property(property: 'message', type: 'string'),
+                                new OA\Property(property: 'is_system_message', type: 'boolean'),
+                                new OA\Property(property: 'has_attachment', type: 'boolean'),
+                                new OA\Property(property: 'attachment_url', type: 'string', nullable: true),
+                                new OA\Property(property: 'created_at_formatted', type: 'string'),
+                                new OA\Property(property: 'created_at_human', type: 'string'),
+                            ]
+                        )),
+                        new OA\Property(property: 'meta', type: 'object'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado'),
+            new OA\Response(response: 403, description: 'Sem permissão')
+        ]
+    )]
     public function index(Request $request, $serviceOrderId)
     {
         try {
@@ -33,10 +85,9 @@ class ServiceOrderMessageController extends Controller
             
             $messages = ServiceOrderMessage::with(['user'])
                 ->where('service_order_id', $order->id)
-                ->orderBy('created_at', 'desc') // 🔥 CORRIGIDO: mostrar mais recentes primeiro
+                ->orderBy('created_at', 'desc')
                 ->paginate($perPage);
 
-            // Marcar mensagens como lidas
             ServiceOrderMessage::where('service_order_id', $order->id)
                 ->where('user_id', '!=', $user->id)
                 ->whereNull('read_at')
@@ -77,16 +128,56 @@ class ServiceOrderMessageController extends Controller
         }
     }
 
-    /**
-     * Adicionar mensagem na OS
-     */
+    #[OA\Post(
+        path: '/api/v1/service-orders/{serviceOrderId}/messages',
+        summary: 'Adicionar mensagem na OS',
+        description: 'Envia uma nova mensagem para uma ordem de serviço, com suporte a anexo.',
+        tags: ['Mensagens de OS'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'serviceOrderId',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da ordem de serviço'
+            )
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    required: ['message'],
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string', maxLength: 5000, example: 'Problema resolvido!'),
+                        new OA\Property(property: 'attachment', type: 'string', format: 'binary', description: 'Arquivo anexado (máx 10MB)')
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Mensagem enviada com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'data', type: 'object'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado'),
+            new OA\Response(response: 403, description: 'Sem permissão'),
+            new OA\Response(response: 422, description: 'Erro de validação ou chamado fechado')
+        ]
+    )]
     public function store(Request $request, $serviceOrderId)
     {
         try {
             $order = ServiceOrder::findOrFail($serviceOrderId);
             $user = auth()->user();
 
-            // 🔥 CORREÇÃO: Verificar se o chamado está fechado
             if ($order->status === 'closed') {
                 return response()->json([
                     'message' => 'Não é possível enviar mensagens em um chamado fechado'
@@ -111,7 +202,6 @@ class ServiceOrderMessageController extends Controller
                 ], 422);
             }
 
-            // 🔥 CORREÇÃO: Salvar anexo
             $path = null;
             if ($request->hasFile('attachment')) {
                 $file = $request->file('attachment');
@@ -123,7 +213,6 @@ class ServiceOrderMessageController extends Controller
                 );
             }
 
-            // Criar mensagem
             $message = ServiceOrderMessage::create([
                 'service_order_id' => $order->id,
                 'user_id' => $user->id,
@@ -134,7 +223,6 @@ class ServiceOrderMessageController extends Controller
 
             $message->load('user');
 
-            // 🔥 CORREÇÃO: Enviar notificações com tratamento de erro
             try {
                 $this->sendNotifications($order, $message, $user);
             } catch (\Exception $e) {
@@ -143,7 +231,6 @@ class ServiceOrderMessageController extends Controller
                     'message_id' => $message->id,
                     'error' => $e->getMessage()
                 ]);
-                // Não interrompe o fluxo
             }
 
             return response()->json([
@@ -159,9 +246,53 @@ class ServiceOrderMessageController extends Controller
         }
     }
 
-    /**
-     * Atualizar mensagem
-     */
+    #[OA\Put(
+        path: '/api/v1/service-orders/{serviceOrderId}/messages/{messageId}',
+        summary: 'Atualizar mensagem',
+        description: 'Edita o conteúdo de uma mensagem existente. Apenas o autor ou um admin podem editar.',
+        tags: ['Mensagens de OS'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'serviceOrderId',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da ordem de serviço'
+            ),
+            new OA\Parameter(
+                name: 'messageId',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da mensagem'
+            )
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['message'],
+                properties: [
+                    new OA\Property(property: 'message', type: 'string', maxLength: 5000, example: 'Corrigindo a mensagem anterior...')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Mensagem atualizada com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'data', type: 'object'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado'),
+            new OA\Response(response: 403, description: 'Sem permissão'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
+    )]
     public function update(Request $request, $serviceOrderId, $messageId)
     {
         try {
@@ -212,9 +343,43 @@ class ServiceOrderMessageController extends Controller
         }
     }
 
-    /**
-     * Excluir mensagem
-     */
+    #[OA\Delete(
+        path: '/api/v1/service-orders/{serviceOrderId}/messages/{messageId}',
+        summary: 'Excluir mensagem',
+        description: 'Remove uma mensagem e seu anexo, se houver. Apenas o autor ou admin podem excluir.',
+        tags: ['Mensagens de OS'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'serviceOrderId',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da ordem de serviço'
+            ),
+            new OA\Parameter(
+                name: 'messageId',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'integer'),
+                description: 'ID da mensagem'
+            )
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Mensagem excluída com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string', example: 'Mensagem excluída com sucesso')
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado'),
+            new OA\Response(response: 403, description: 'Sem permissão'),
+            new OA\Response(response: 404, description: 'Mensagem não encontrada')
+        ]
+    )]
     public function destroy($serviceOrderId, $messageId)
     {
         try {
@@ -229,7 +394,6 @@ class ServiceOrderMessageController extends Controller
                 ], 403);
             }
 
-            // Remover anexo
             if ($message->attachment_path && Storage::disk('public')->exists($message->attachment_path)) {
                 Storage::disk('public')->delete($message->attachment_path);
             }
@@ -248,7 +412,9 @@ class ServiceOrderMessageController extends Controller
         }
     }
 
-    // ========== MÉTODOS PRIVADOS ==========
+    // ================================================================
+    // 🔥 MÉTODOS PRIVADOS
+    // ================================================================
 
     private function canAccessOrder($user, $order)
     {
@@ -274,30 +440,23 @@ class ServiceOrderMessageController extends Controller
         return false;
     }
 
-    /**
-     * 🔥 CORREÇÃO: Enviar notificações de forma robusta
-     */
     private function sendNotifications($order, $message, $sender)
     {
         $recipients = collect();
 
-        // Solicitante
         if ($order->user_id !== $sender->id && $order->user) {
             $recipients->push($order->user);
         }
 
-        // Técnico
         if ($order->technician_id && $order->technician_id !== $sender->id && $order->technician) {
             $recipients->push($order->technician);
         }
 
-        // Administradores
         $admins = User::where('is_admin', true)
             ->where('id', '!=', $sender->id)
             ->get();
         $recipients = $recipients->merge($admins);
 
-        // Membros do grupo
         if ($order->group_id) {
             $members = User::whereHas('groups', function($query) use ($order) {
                 $query->where('groups.id', $order->group_id);
@@ -307,7 +466,6 @@ class ServiceOrderMessageController extends Controller
             $recipients = $recipients->merge($members);
         }
 
-        // Remover duplicados
         $recipients = $recipients->unique('id');
 
         Log::info('Enviando notificações:', [
@@ -332,9 +490,6 @@ class ServiceOrderMessageController extends Controller
         }
     }
 
-    /**
-     * 🔥 CORREÇÃO: Formatar mensagem com todos os campos necessários
-     */
     private function formatMessage($message)
     {
         $user = $message->user;
@@ -356,7 +511,6 @@ class ServiceOrderMessageController extends Controller
             'attachment_info' => $message->getAttachmentInfo(),
             'is_read' => !is_null($message->read_at),
             'read_at' => $message->read_at,
-            // 🔥 CORREÇÃO: Data formatada para exibição
             'created_at' => $message->created_at->toISOString(),
             'created_at_formatted' => $message->created_at->format('d/m/Y H:i'),
             'created_at_human' => $message->created_at->diffForHumans(),

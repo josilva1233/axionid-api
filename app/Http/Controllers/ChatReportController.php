@@ -9,14 +9,67 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use OpenApi\Attributes as OA;
 
+#[OA\Tag(name: 'Chat Assistente', description: 'Assistente inteligente para consultas e ações via chat')]
 class ChatReportController extends Controller
 {
+    #[OA\Get(
+        path: '/api/v1/ai/status',
+        summary: 'Verificar status da IA',
+        description: 'Retorna o status do serviço de IA (sempre online para o assistente de relatórios).',
+        tags: ['Chat Assistente'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Status online',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'status', type: 'string', example: 'online')
+                    ]
+                )
+            )
+        ]
+    )]
     public function status()
     {
         return response()->json(['status' => 'online']);
     }
 
+    #[OA\Post(
+        path: '/api/v1/ai/chat',
+        summary: 'Enviar mensagem para o assistente',
+        description: 'Processa comandos em linguagem natural para consultas e ações (criar grupo, abrir chamado, gerar relatórios, criar termos).',
+        tags: ['Chat Assistente'],
+        security: [['sanctum' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['message'],
+                properties: [
+                    new OA\Property(
+                        property: 'message',
+                        type: 'string',
+                        example: 'Quantos chamados eu tenho?'
+                    )
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Resposta do assistente',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string', example: '📊 Você tem um total de 3 chamado(s).')
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autenticado'),
+            new OA\Response(response: 500, description: 'Erro interno')
+        ]
+    )]
     public function chat(Request $request)
     {
         try {
@@ -31,6 +84,24 @@ class ChatReportController extends Controller
         }
     }
 
+    #[OA\Delete(
+        path: '/api/v1/ai/history',
+        summary: 'Limpar histórico do chat (mock)',
+        description: 'Endpoint para limpar o histórico de conversas. Por enquanto apenas um mock.',
+        tags: ['Chat Assistente'],
+        security: [['sanctum' => []]],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Histórico limpo',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string', example: 'Histórico limpo com sucesso.')
+                    ]
+                )
+            )
+        ]
+    )]
     public function clearHistory()
     {
         return response()->json(['message' => 'Histórico limpo com sucesso.']);
@@ -163,7 +234,6 @@ class ChatReportController extends Controller
         $user = Auth::user();
         if (!$user) return "⚠️ Você precisa estar logado para abrir um chamado.";
 
-        // Extrair todos os campos
         $data = $this->extractOrderData($message);
 
         if (empty($data['title'])) {
@@ -228,13 +298,11 @@ class ChatReportController extends Controller
             'contact_phone' => null,
         ];
 
-        // Tenta extrair título
         if (preg_match('/título[: ]+(.*?)(,|$)/i', $message, $matches)) {
             $data['title'] = trim($matches[1]);
         } elseif (preg_match('/com título[: ]+(.*?)(,|$)/i', $message, $matches)) {
             $data['title'] = trim($matches[1]);
         } else {
-            // Remove palavras-chave e pega primeiro segmento
             $commandWords = ['abrir chamado', 'novo chamado', 'criar chamado'];
             $clean = $message;
             foreach ($commandWords as $cmd) {
@@ -247,7 +315,6 @@ class ChatReportController extends Controller
             $this->parseExtras($extras, $data);
         }
 
-        // Se ainda tem extras não processados
         if (!empty($extras)) {
             $this->parseExtras($extras, $data);
         }
@@ -257,33 +324,27 @@ class ChatReportController extends Controller
 
     private function parseExtras($text, &$data)
     {
-        // Prioridade
         if (preg_match('/prioridade[: ]+(baixa|média|alta|urgente|low|medium|high|urgent)/i', $text, $matches)) {
             $map = ['baixa'=>'low','média'=>'medium','alta'=>'high','urgente'=>'urgent','low'=>'low','medium'=>'medium','high'=>'high','urgent'=>'urgent'];
             $data['priority'] = $map[strtolower($matches[1])] ?? 'medium';
         }
 
-        // Grupo
         if (preg_match('/grupo[: ]+([^,]+)/i', $text, $matches)) {
             $groupName = trim($matches[1]);
             $group = Group::where('name', $groupName)->first() ?? Group::where('name', 'like', "%{$groupName}%")->first();
             if ($group) $data['group_id'] = $group->id;
         }
 
-        // Categoria
         if (preg_match('/categoria[: ]+([^,]+)/i', $text, $matches)) {
             $data['category'] = trim($matches[1]);
         }
 
-        // Departamento
         if (preg_match('/departamento[: ]+([^,]+)/i', $text, $matches)) {
             $data['department'] = trim($matches[1]);
         }
 
-        // Prazo (deadline)
         if (preg_match('/prazo[: ]+([0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{2}\/[0-9]{2}\/[0-9]{4})/i', $text, $matches)) {
             $date = trim($matches[1]);
-            // Converte dd/mm/yyyy para yyyy-mm-dd
             if (strpos($date, '/') !== false) {
                 $parts = explode('/', $date);
                 $date = $parts[2].'-'.$parts[1].'-'.$parts[0];
@@ -291,12 +352,10 @@ class ChatReportController extends Controller
             $data['deadline'] = $date;
         }
 
-        // Contato (telefone)
         if (preg_match('/contato[: ]+([^,]+)/i', $text, $matches)) {
             $data['contact_phone'] = trim($matches[1]);
         }
 
-        // Descrição (restante)
         if (preg_match('/descrição[: ]+(.*?)(,|$)/i', $text, $matches)) {
             $data['description'] = trim($matches[1]);
         }
@@ -314,8 +373,6 @@ class ChatReportController extends Controller
     {
         $user = Auth::user();
         if (!$user) return "⚠️ Você precisa estar logado.";
-
-        // Verifica se é admin
         if (!$user->is_admin) {
             return "🔒 Apenas administradores podem gerar relatórios.";
         }
@@ -333,7 +390,6 @@ class ChatReportController extends Controller
         if (!$user) return "⚠️ Você precisa estar logado.";
         if (!$user->is_admin) return "🔒 Apenas administradores podem criar termos.";
 
-        // Extrair versão e conteúdo
         preg_match('/versão[: ]+([0-9.]+)/i', $message, $versionMatch);
         preg_match('/conteúdo[: ]+(.*?)$/i', $message, $contentMatch);
 
@@ -349,9 +405,7 @@ class ChatReportController extends Controller
         }
 
         try {
-            // Se for a primeira versão, ativa automaticamente
             $isActive = Term::count() === 0;
-
             $term = Term::create([
                 'version' => $version,
                 'content' => $content,

@@ -11,10 +11,11 @@ use Illuminate\Support\Facades\DB;
 use Laravel\Socialite\Facades\Socialite;
 use OpenApi\Attributes as OA;
 
+#[OA\Tag(name: 'Autenticação Social', description: 'Login e cadastro via provedores sociais')]
 class SocialAuthController extends Controller
 {
     #[OA\Get(
-        path: '/api/v1/auth/google/redirect',
+        path: '/api/v1/auth/google',
         summary: '1. Redirecionar para o Google',
         description: 'Inicia o fluxo OAuth2. O parâmetro "origin" define para onde o usuário volta após o login.',
         tags: ['Autenticação Social'],
@@ -44,9 +45,24 @@ class SocialAuthController extends Controller
     #[OA\Get(
         path: '/api/v1/auth/google/callback',
         summary: '2. Callback do Google',
+        description: 'Endpoint chamado pelo Google após autenticação. Redireciona para o frontend com token ou erro.',
         tags: ['Autenticação Social'],
+        parameters: [
+            new OA\Parameter(
+                name: 'state',
+                in: 'query',
+                description: 'Parâmetro de estado contendo a origin do frontend',
+                schema: new OA\Schema(type: 'string')
+            ),
+            new OA\Parameter(
+                name: 'code',
+                in: 'query',
+                description: 'Código de autorização retornado pelo Google',
+                schema: new OA\Schema(type: 'string')
+            )
+        ],
         responses: [
-            new OA\Response(response: 302, description: 'Redireciona para /register ou /login')
+            new OA\Response(response: 302, description: 'Redireciona para /register ou /login com token')
         ]
     )]
     public function handleGoogleCallback(Request $request)
@@ -72,7 +88,7 @@ class SocialAuthController extends Controller
                     'google_id'         => $googleUser->id,
                     'password'          => Hash::make(Str::random(24)),
                     'from_google'       => true,
-                    'profile_completed' => false, // No primeiro acesso via Google, inicia como 0
+                    'profile_completed' => false,
                 ]);
             } else {
                 $user->update(['google_id' => $googleUser->id]);
@@ -102,25 +118,45 @@ class SocialAuthController extends Controller
     }
 
     #[OA\Post(
-        path: '/api/v1/auth/google/complete-profile',
-        summary: '3. Finalizar cadastro (Google)',
+        path: '/api/v1/complete-profile',
+        summary: '3. Finalizar cadastro (Google ou manual)',
+        description: 'Completa o perfil do usuário com CPF/CNPJ e senha. Para usuários vindos do Google, também pode receber dados de endereço.',
         tags: ['Autenticação Social'],
         security: [['sanctum' => []]],
         requestBody: new OA\RequestBody(
             required: true,
             content: new OA\JsonContent(
                 properties: [
-                    new OA\Property(property: 'cpf_cnpj', type: 'string'),
-                    new OA\Property(property: 'password', type: 'string'),
-                    new OA\Property(property: 'password_confirmation', type: 'string')
+                    new OA\Property(property: 'cpf_cnpj', type: 'string', example: '12345678901'),
+                    new OA\Property(property: 'password', type: 'string', example: 'senha123'),
+                    new OA\Property(property: 'password_confirmation', type: 'string', example: 'senha123'),
+                    new OA\Property(property: 'from_google', type: 'boolean', example: true, description: 'Indica se o cadastro veio do Google'),
+                    new OA\Property(property: 'zip_code', type: 'string', example: '01001000'),
+                    new OA\Property(property: 'street', type: 'string', example: 'Rua Exemplo'),
+                    new OA\Property(property: 'number', type: 'string', example: '123'),
+                    new OA\Property(property: 'neighborhood', type: 'string', example: 'Centro'),
+                    new OA\Property(property: 'city', type: 'string', example: 'São Paulo'),
+                    new OA\Property(property: 'state', type: 'string', example: 'SP'),
+                    new OA\Property(property: 'complement', type: 'string', example: 'Apto 101', nullable: true),
                 ]
             )
         ),
         responses: [
-            new OA\Response(response: 200, description: 'Perfil finalizado com sucesso')
+            new OA\Response(
+                response: 200,
+                description: 'Perfil finalizado com sucesso',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'user', type: 'object'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 401, description: 'Não autorizado'),
+            new OA\Response(response: 422, description: 'Erro de validação')
         ]
     )]
-public function completeProfile(Request $request)
+    public function completeProfile(Request $request)
     {
         $user = $request->user();
 
@@ -135,26 +171,20 @@ public function completeProfile(Request $request)
 
         return DB::transaction(function () use ($request, $user) {
             
-            // LÓGICA DE DECISÃO:
-            // Se no Request vier 'from_google' como true, mantemos profile_completed como false (0).
-            // Caso contrário (cadastro manual ou outra rota), marcamos como true (1).
             $isFromGoogle = $request->input('from_google') === 'true' || $request->input('from_google') === true;
             
             $user->update([
                 'cpf_cnpj'          => $request->cpf_cnpj,
                 'password'          => Hash::make($request->password),
-                'profile_completed' => $isFromGoogle ? false : true, // Se for Google, grava 0. Se não, grava 1.
+                'profile_completed' => $isFromGoogle ? false : true,
                 'from_google'       => $isFromGoogle,
             ]);
 
-            // Só salva endereço se for enviado (como não é o caso do seu form do Google agora, ele pula)
             if ($request->has('zip_code') && $request->zip_code) {
                 $user->address()->updateOrCreate(
                     ['user_id' => $user->id],
                     $request->only(['zip_code', 'street', 'number', 'neighborhood', 'city', 'state', 'complement'])
                 );
-                
-                // Se ele preencheu o endereço agora, aí sim podemos forçar o completado para true
                 $user->update(['profile_completed' => true]);
             }
 
@@ -164,19 +194,50 @@ public function completeProfile(Request $request)
             ]);
         });
     }
-public function findByEmail($email)
-{
-    $user = \App\Models\User::where('email', $email)->first();
 
-    if (!$user) {
-        return response()->json(['message' => 'Usuário não encontrado'], 404);
+    #[OA\Get(
+        path: '/api/v1/users/find-by-email/{email}',
+        summary: 'Buscar usuário por e-mail (admin)',
+        description: 'Retorna informações básicas de um usuário a partir do e-mail. Restrito a administradores.',
+        tags: ['Usuários'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'email',
+                in: 'path',
+                required: true,
+                schema: new OA\Schema(type: 'string'),
+                example: 'joao@email.com'
+            )
+        ],
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Dados do usuário',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'id', type: 'integer'),
+                        new OA\Property(property: 'name', type: 'string'),
+                        new OA\Property(property: 'email', type: 'string'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 404, description: 'Usuário não encontrado')
+        ]
+    )]
+    public function findByEmail($email)
+    {
+        $user = \App\Models\User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'Usuário não encontrado'], 404);
+        }
+
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email
+        ]);
     }
-
-    // Retorna apenas o ID e Nome para segurança
-    return response()->json([
-        'id' => $user->id,
-        'name' => $user->name,
-        'email' => $user->email
-    ]);
-}
 }
