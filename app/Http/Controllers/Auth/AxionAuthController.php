@@ -506,20 +506,25 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Privilégios removidos com sucesso.']);
     }
 
-    public function findByEmail($email)
-    {
-        $user = User::where('email', $email)->first();
-
-        if (!$user) {
-            return response()->json(['message' => 'E-mail não encontrado no sistema.'], 404);
-        }
-
-        return response()->json([
-            'id' => $user->id,
-            'name' => $user->name,
-            'email' => $user->email
-        ]);
+public function findByEmail($email)
+{
+    // 🔒 Restringe o acesso apenas a administradores
+    if (!auth()->user() || !auth()->user()->is_admin) {
+        return response()->json(['message' => 'Acesso negado.'], 403);
     }
+
+    $user = User::where('email', $email)->first();
+
+    if (!$user) {
+        return response()->json(['message' => 'E-mail não encontrado no sistema.'], 404);
+    }
+
+    return response()->json([
+        'id' => $user->id,
+        'name' => $user->name,
+        'email' => $user->email
+    ]);
+}
         /**
      * 🔥 OBTER PERMISSÕES DO USUÁRIO LOGADO
      * GET /api/v1/me/permissions
