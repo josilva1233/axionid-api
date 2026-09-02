@@ -87,10 +87,10 @@ Route::prefix('v1')->group(function () {
             });
         });
 
-                // 🔥 NOVO: Chat de Relatórios
-        Route::get('/ai/status', [ChatReportController::class, 'status']);
-        Route::post('/ai/chat', [ChatReportController::class, 'chat']);
-        Route::delete('/ai/history', [ChatReportController::class, 'clearHistory
+// --- Chat de Relatórios (usuários autenticados) ---
+Route::get('/ai/status', [ChatReportController::class, 'status']);
+Route::post('/ai/chat', [ChatReportController::class, 'chat']);
+Route::delete('/ai/history', [ChatReportController::class, 'clearHistory']);
 
         // =========================================================
         // --- Módulo Administrativo (Super Admin) ---
