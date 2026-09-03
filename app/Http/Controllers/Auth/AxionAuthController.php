@@ -163,30 +163,7 @@ class AxionAuthController extends Controller
         ], 200);
     }
 
-    #[OA\Post(
-        path: '/api/v1/complete-profile',
-        summary: '3. Completar Cadastro (Etapa 2 - Endereço)',
-        tags: ['Perfil'],
-        security: [['sanctum' => []]],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                properties: [
-                    new OA\Property(property: 'zip_code', type: 'string', example: '01001000'),
-                    new OA\Property(property: 'street', type: 'string', example: 'Rua Exemplo'),
-                    new OA\Property(property: 'number', type: 'string', example: '123'),
-                    new OA\Property(property: 'neighborhood', type: 'string', example: 'Bairro Centro'),
-                    new OA\Property(property: 'city', type: 'string', example: 'São Paulo'),
-                    new OA\Property(property: 'state', type: 'string', example: 'SP'),
-                    new OA\Property(property: 'complement', type: 'string', example: 'Apto 1', nullable: true)
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(response: 200, description: 'Perfil completado com sucesso'),
-            new OA\Response(response: 422, description: 'Erro de validação')
-        ]
-    )]
+
     public function completeProfile(Request $request)
     {
         $user = Auth::user();
