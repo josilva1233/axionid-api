@@ -34,6 +34,7 @@ class ServiceOrder extends Model
     const STATUS_IN_PROGRESS = 'in_progress';
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
+    const STATUS_CLOSED = 'closed';
 
     // Prioridades possíveis
     const PRIORITY_LOW = 'low';
@@ -167,6 +168,7 @@ class ServiceOrder extends Model
             self::STATUS_IN_PROGRESS => 'Em Andamento',
             self::STATUS_COMPLETED => 'Concluída',
             self::STATUS_CANCELLED => 'Cancelada',
+            self::STATUS_CLOSED => 'Fechada',
         ][$this->status] ?? $this->status;
     }
 
