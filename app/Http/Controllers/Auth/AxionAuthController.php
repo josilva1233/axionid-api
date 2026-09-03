@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 
 class AxionAuthController extends Controller
@@ -258,6 +259,50 @@ class AxionAuthController extends Controller
         summary: 'Listar usuários (Admin)',
         tags: ['Administração'],
         security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(
+                name: 'name',
+                in: 'query',
+                description: 'Filtrar por nome (parcial)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'João')
+            ),
+            new OA\Parameter(
+                name: 'cpf',
+                in: 'query',
+                description: 'Filtrar por CPF/CNPJ (parcial)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: '123456')
+            ),
+            new OA\Parameter(
+                name: 'email',
+                in: 'query',
+                description: 'Filtrar por e-mail (parcial)',
+                required: false,
+                schema: new OA\Schema(type: 'string', example: 'joao')
+            ),
+            new OA\Parameter(
+                name: 'completed',
+                in: 'query',
+                description: 'Filtrar por status do perfil (1 = completo, 0 = incompleto)',
+                required: false,
+                schema: new OA\Schema(type: 'string', enum: ['0', '1'])
+            ),
+            new OA\Parameter(
+                name: 'page',
+                in: 'query',
+                description: 'Número da página',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 1)
+            ),
+            new OA\Parameter(
+                name: 'per_page',
+                in: 'query',
+                description: 'Itens por página',
+                required: false,
+                schema: new OA\Schema(type: 'integer', example: 10)
+            ),
+        ],
         responses: [
             new OA\Response(response: 200, description: 'Lista de usuários paginada'),
             new OA\Response(response: 403, description: 'Acesso negado')
@@ -265,11 +310,33 @@ class AxionAuthController extends Controller
     )]
     public function index(Request $request)
     {
-        if (!Auth::user()->is_admin) return response()->json(['message' => 'Acesso negado.'], 403);
+        if (!Auth::user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
         $query = User::with('address');
-        if ($request->filled('name')) $query->where('name', 'like', '%' . $request->name . '%');
-        if ($request->has('completed')) $query->where('profile_completed', $request->completed);
-        return response()->json($query->orderBy('created_at', 'desc')->paginate(10));
+
+        if ($request->filled('name')) {
+            $query->where('name', 'like', '%' . $request->name . '%');
+        }
+
+        if ($request->filled('cpf')) {
+            $query->where('cpf_cnpj', 'like', '%' . $request->cpf . '%');
+        }
+
+        if ($request->filled('email')) {
+            $query->where('email', 'like', '%' . $request->email . '%');
+        }
+
+        if ($request->has('completed')) {
+            $query->where('profile_completed', $request->completed);
+        }
+
+        $perPage = $request->input('per_page', 10);
+
+        return response()->json(
+            $query->orderBy('created_at', 'desc')->paginate($perPage)
+        );
     }
 
     #[OA\Put(
@@ -483,26 +550,27 @@ class AxionAuthController extends Controller
         return response()->json(['message' => 'Privilégios removidos com sucesso.']);
     }
 
-public function findByEmail($email)
-{
-    // 🔒 Restringe o acesso apenas a administradores
-    if (!auth()->user() || !auth()->user()->is_admin) {
-        return response()->json(['message' => 'Acesso negado.'], 403);
+    public function findByEmail($email)
+    {
+        // 🔒 Restringe o acesso apenas a administradores
+        if (!auth()->user() || !auth()->user()->is_admin) {
+            return response()->json(['message' => 'Acesso negado.'], 403);
+        }
+
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'E-mail não encontrado no sistema.'], 404);
+        }
+
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email
+        ]);
     }
 
-    $user = User::where('email', $email)->first();
-
-    if (!$user) {
-        return response()->json(['message' => 'E-mail não encontrado no sistema.'], 404);
-    }
-
-    return response()->json([
-        'id' => $user->id,
-        'name' => $user->name,
-        'email' => $user->email
-    ]);
-}
-        /**
+    /**
      * 🔥 OBTER PERMISSÕES DO USUÁRIO LOGADO
      * GET /api/v1/me/permissions
      * 
@@ -565,25 +633,24 @@ public function findByEmail($email)
             ], 500);
         }
     }
+
     /**
-/**
- * Atualizar preferência de tema do usuário logado
- * PUT /api/v1/theme
- */
-public function updateTheme(Request $request)
-{
-    $request->validate([
-        'theme' => 'required|in:dark,light',
-    ]);
+     * Atualizar preferência de tema do usuário logado
+     * PUT /api/v1/theme
+     */
+    public function updateTheme(Request $request)
+    {
+        $request->validate([
+            'theme' => 'required|in:dark,light',
+        ]);
 
-    $user = Auth::user();
-    $user->theme_preference = $request->theme;
-    $user->save();
+        $user = Auth::user();
+        $user->theme_preference = $request->theme;
+        $user->save();
 
-    return response()->json([
-        'message' => 'Tema atualizado com sucesso!',
-        'theme'   => $user->theme_preference,
-    ]);
-}
-
+        return response()->json([
+            'message' => 'Tema atualizado com sucesso!',
+            'theme'   => $user->theme_preference,
+        ]);
+    }
 }
