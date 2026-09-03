@@ -45,12 +45,10 @@ class AxionGroupController extends Controller
         $user = Auth::user();
         $searchTerm = $request->name;
 
-        // Adicione 'permissions' ao array do with
-    $query = Group::with(['creator', 'permissions', 'users' => function($q) {
-        $q->select('users.id', 'users.name', 'users.email'); 
-    }]);
+        $query = Group::with(['creator', 'permissions', 'users' => function($q) {
+            $q->select('users.id', 'users.name', 'users.email');
+        }]);
 
-        // --- Início da Lógica de Busca ---
         if (!empty($searchTerm)) {
             $query->where(function($q) use ($searchTerm) {
                 $q->where('name', 'like', '%' . $searchTerm . '%')
@@ -62,12 +60,10 @@ class AxionGroupController extends Controller
                   });
             });
         }
-        // --- Fim da Lógica de Busca ---
 
         if ($user->is_admin) {
             $groups = $query->paginate(15);
         } else {
-            // Mantém a regra original: Dono ou Membro
             $groups = $query->where(function($q) use ($user) {
                 $q->where('creator_id', $user->id)
                   ->orWhereHas('users', function ($q) use ($user) {
@@ -123,6 +119,69 @@ class AxionGroupController extends Controller
             'message' => 'Grupo criado com sucesso',
             'group' => $group
         ], 201);
+    }
+
+    // 🔥 NOVO MÉTODO: ATUALIZAR GRUPO
+    #[OA\Put(
+        path: '/api/v1/groups/{id}',
+        summary: 'Atualizar dados do grupo',
+        tags: ['Grupos'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', example: 'Novo Nome do Grupo'),
+                    new OA\Property(property: 'description', type: 'string', nullable: true, example: 'Descrição atualizada')
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Grupo atualizado com sucesso'),
+            new OA\Response(response: 403, description: 'Acesso negado'),
+            new OA\Response(response: 404, description: 'Grupo não encontrado'),
+            new OA\Response(response: 422, description: 'Erro de validação')
+        ]
+    )]
+    public function update(Request $request, $id)
+    {
+        $group = Group::findOrFail($id);
+        $user = Auth::user();
+
+        // Verifica permissão: apenas administradores do grupo, o criador, ou admin global podem editar
+        $isGroupAdmin = $group->users()->where('user_id', $user->id)->wherePivot('role', 'admin')->exists();
+        $isCreator = $group->creator_id === $user->id;
+
+        if (!$user->is_admin && !$isGroupAdmin && !$isCreator) {
+            return response()->json([
+                'message' => 'Você não tem permissão para editar este grupo.'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'sometimes|required|string|max:255|unique:groups,name,' . $group->id,
+            'description' => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Dados inválidos.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $group->update([
+            'name' => $request->name ?? $group->name,
+            'description' => $request->description ?? $group->description,
+        ]);
+
+        return response()->json([
+            'message' => 'Grupo atualizado com sucesso.',
+            'data' => $group->load(['creator', 'users', 'permissions'])
+        ], 200);
     }
 
     #[OA\Get(

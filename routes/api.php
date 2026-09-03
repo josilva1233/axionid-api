@@ -59,11 +59,17 @@ Route::prefix('v1')->group(function () {
         Route::get('/terms/check', [TermController::class, 'checkStatus']);
         Route::post('/terms/accept', [TermController::class, 'accept']);
 
+        // =========================================================
         // --- Módulo de Grupos ---
+        // =========================================================
         Route::prefix('groups')->group(function () {
             Route::get('/', [AxionGroupController::class, 'index']);
             Route::post('/', [AxionGroupController::class, 'store']);
             Route::get('/{id}', [AxionGroupController::class, 'show']);
+            
+            // 🔥 NOVO: Rota PUT para atualizar grupo
+            Route::put('/{id}', [AxionGroupController::class, 'update']);   // <-- ADICIONADO
+            
             Route::delete('/{id}', [AxionGroupController::class, 'destroy']);
             Route::post('/{group_id}/members', [AxionGroupController::class, 'addMember']);
             Route::patch('/{group_id}/members/{user_id}/promote', [AxionGroupController::class, 'promoteMember']);
@@ -80,10 +86,8 @@ Route::prefix('v1')->group(function () {
             Route::put('/{id}', [ServiceOrderController::class, 'update']);
             Route::delete('/{id}', [ServiceOrderController::class, 'destroy']);
             
-            // NOVA ROTA: Buscar grupos disponíveis para o formulário
             Route::get('/groups/available', [ServiceOrderController::class, 'getAvailableGroups']);
             
-            // --- ROTAS DE MENSAGENS (aninhadas corretamente) ---
             Route::prefix('{serviceOrderId}/messages')->group(function () {
                 Route::get('/', [ServiceOrderMessageController::class, 'index']);
                 Route::post('/', [ServiceOrderMessageController::class, 'store']);
@@ -138,14 +142,12 @@ Route::prefix('v1')->group(function () {
 
             // --- Termos de Uso (Admin) ---
             Route::prefix('terms')->group(function () {
-                // Gestão de Termos
                 Route::get('/', [TermController::class, 'index']);
                 Route::post('/', [TermController::class, 'store']);
                 Route::put('/{id}', [TermController::class, 'update']);
                 Route::delete('/{id}', [TermController::class, 'destroy']);
                 Route::patch('/{id}/toggle', [TermController::class, 'toggleStatus']);
                 
-                // 🔥 NOVAS ROTAS: Visualização de Aceitações
                 Route::get('/acceptances', [TermController::class, 'acceptances']);
                 Route::get('/acceptances/pending', [TermController::class, 'pendingAcceptances']);
                 Route::get('/acceptances/stats', [TermController::class, 'acceptanceStats']);
