@@ -697,4 +697,49 @@ class ServiceOrderController extends Controller
 
         return $recipients->unique('id');
     }
+    // app/Http/Controllers/ServiceOrder/ServiceOrderController.php
+
+#[OA\Put(
+    path: '/api/v1/service-orders/{id}/cancel',
+    summary: 'Cancelar Ordem de Serviço',
+    description: 'Permite que o solicitante ou admin cancele um chamado que ainda está aberto ou em andamento.',
+    tags: ['Ordens de Serviço'],
+    security: [['sanctum' => []]],
+    parameters: [
+        new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'OS cancelada com sucesso'),
+        new OA\Response(response: 403, description: 'Sem permissão'),
+        new OA\Response(response: 422, description: 'Status inválido para cancelamento')
+    ]
+)]
+public function cancel($id)
+{
+    $os = ServiceOrder::with(['user', 'technician', 'group'])->findOrFail($id);
+    $user = auth()->user();
+
+    // Verificar se o usuário é o solicitante ou admin
+    if (!$user->is_admin && $os->user_id !== $user->id) {
+        return response()->json([
+            'message' => 'Você não tem permissão para cancelar este chamado.'
+        ], 403);
+    }
+
+    // Verificar se o status permite cancelamento
+    if (!in_array($os->status, ['open', 'in_progress'])) {
+        return response()->json([
+            'message' => 'Apenas chamados abertos ou em andamento podem ser cancelados.'
+        ], 422);
+    }
+
+    // Atualizar status para 'cancelled'
+    $os->status = ServiceOrder::STATUS_CANCELLED;
+    $os->save();
+
+    return response()->json([
+        'message' => 'Ordem de serviço cancelada com sucesso.',
+        'data' => $os->load(['user', 'technician', 'group'])
+    ]);
+}
 }

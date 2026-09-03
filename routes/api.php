@@ -85,6 +85,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('/{id}', [ServiceOrderController::class, 'update']);
             Route::put('/{id}', [ServiceOrderController::class, 'update']);
             Route::delete('/{id}', [ServiceOrderController::class, 'destroy']);
+            Route::put('/{id}/cancel', [ServiceOrderController::class, 'cancel']);
             
             Route::get('/groups/available', [ServiceOrderController::class, 'getAvailableGroups']);
             
