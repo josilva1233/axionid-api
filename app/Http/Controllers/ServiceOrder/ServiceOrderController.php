@@ -16,6 +16,56 @@ use OpenApi\Attributes as OA;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
+// ================================================================
+// 🔥 DEFINIÇÃO DOS SCHEMAS PARA SWAGGER (CORRIGIDO)
+// ================================================================
+
+#[OA\Schema(
+    schema: 'User',
+    type: 'object',
+    properties: [
+        new OA\Property(property: 'id', type: 'integer', example: 1),
+        new OA\Property(property: 'name', type: 'string', example: 'João Silva'),
+        new OA\Property(property: 'email', type: 'string', example: 'joao@email.com'),
+        new OA\Property(property: 'is_admin', type: 'boolean', example: false),
+        new OA\Property(property: 'is_active', type: 'boolean', example: true),
+    ]
+)]
+#[OA\Schema(
+    schema: 'Group',
+    type: 'object',
+    properties: [
+        new OA\Property(property: 'id', type: 'integer', example: 1),
+        new OA\Property(property: 'name', type: 'string', example: 'TI Suporte'),
+        new OA\Property(property: 'description', type: 'string', nullable: true, example: 'Equipe de suporte técnico'),
+        new OA\Property(property: 'creator_id', type: 'integer', example: 5),
+    ]
+)]
+#[OA\Schema(
+    schema: 'ServiceOrder',
+    type: 'object',
+    properties: [
+        new OA\Property(property: 'id', type: 'integer', example: 1),
+        new OA\Property(property: 'protocol', type: 'string', example: 'OS-20260902-A1B2'),
+        new OA\Property(property: 'title', type: 'string', example: 'Problema no acesso ao sistema'),
+        new OA\Property(property: 'description', type: 'string', example: 'Não consigo logar desde hoje cedo'),
+        new OA\Property(property: 'status', type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'], example: 'open'),
+        new OA\Property(property: 'priority', type: 'string', enum: ['low', 'medium', 'high', 'urgent'], example: 'high'),
+        new OA\Property(property: 'category', type: 'string', nullable: true, example: 'Rede'),
+        new OA\Property(property: 'department', type: 'string', nullable: true, example: 'TI'),
+        new OA\Property(property: 'deadline', type: 'string', format: 'date', nullable: true, example: '2025-12-31'),
+        new OA\Property(property: 'contact_phone', type: 'string', nullable: true, example: '1199999999'),
+        new OA\Property(property: 'attachment_path', type: 'string', nullable: true, example: 'attachments/file.pdf'),
+        new OA\Property(property: 'user_id', type: 'integer', example: 10),
+        new OA\Property(property: 'group_id', type: 'integer', nullable: true, example: 1),
+        new OA\Property(property: 'technician_id', type: 'integer', nullable: true, example: 5),
+        new OA\Property(property: 'user', ref: '#/components/schemas/User'),
+        new OA\Property(property: 'group', ref: '#/components/schemas/Group'),
+        new OA\Property(property: 'technician', ref: '#/components/schemas/User'),
+        new OA\Property(property: 'created_at', type: 'string', format: 'date-time'),
+        new OA\Property(property: 'updated_at', type: 'string', format: 'date-time'),
+    ]
+)]
 #[OA\Tag(name: 'Ordens de Serviço', description: 'Gerenciamento de chamados e ordens de serviço')]
 class ServiceOrderController extends Controller
 {
