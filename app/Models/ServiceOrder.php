@@ -21,6 +21,10 @@ class ServiceOrder extends Model
         'status',
         'priority',
         'resolved_at',
+        'category_id',
+        'sla_first_response_due_at',
+        'sla_resolution_due_at',
+        'first_response_at',
     ];
 
     protected $casts = [

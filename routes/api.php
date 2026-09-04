@@ -10,6 +10,7 @@ use App\Http\Controllers\ServiceOrder\ServiceOrderController;
 use App\Http\Controllers\ServiceOrder\ServiceOrderMessageController;
 use App\Http\Controllers\Auth\TermController;
 use App\Http\Controllers\ChatReportController;
+use App\Http\Controllers\CategoryController; // 🔥 ADICIONADO
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
@@ -66,10 +67,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/', [AxionGroupController::class, 'index']);
             Route::post('/', [AxionGroupController::class, 'store']);
             Route::get('/{id}', [AxionGroupController::class, 'show']);
-            
-            // 🔥 NOVO: Rota PUT para atualizar grupo
-            Route::put('/{id}', [AxionGroupController::class, 'update']);   // <-- ADICIONADO
-            
+            Route::put('/{id}', [AxionGroupController::class, 'update']);
             Route::delete('/{id}', [AxionGroupController::class, 'destroy']);
             Route::post('/{group_id}/members', [AxionGroupController::class, 'addMember']);
             Route::patch('/{group_id}/members/{user_id}/promote', [AxionGroupController::class, 'promoteMember']);
@@ -77,10 +75,20 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{group_id}/members/{user_id}', [AxionGroupController::class, 'removeMember']);
         });
 
+        // =========================================================
+        // --- Módulo de Categorias (para usuários) 🔥 NOVO ---
+        // =========================================================
+        Route::prefix('categories')->group(function () {
+            Route::get('/', [CategoryController::class, 'index']);      // Lista categorias ativas
+            Route::get('/{id}', [CategoryController::class, 'show']);   // Detalhes de uma categoria
+        });
+
+        // =========================================================
         // --- Módulo de Ordens de Serviço ---
+        // =========================================================
         Route::prefix('service-orders')->group(function () {
             Route::get('/', [ServiceOrderController::class, 'index']);
-            Route::post('/', [ServiceOrderController::class, 'store']);
+            Route::post('/', [ServiceOrderController::class, 'store']);   // ← AGORA EXIGE category_id
             Route::get('/{id}', [ServiceOrderController::class, 'show']);
             Route::patch('/{id}', [ServiceOrderController::class, 'update']);
             Route::put('/{id}', [ServiceOrderController::class, 'update']);
@@ -97,7 +105,6 @@ Route::prefix('v1')->group(function () {
                 Route::put('/{messageId}/read', [ServiceOrderMessageController::class, 'markAsRead']);
             });
         });
-
 
         // =========================================================
         // --- Módulo Administrativo (Super Admin) ---
@@ -116,6 +123,15 @@ Route::prefix('v1')->group(function () {
 
             // --- Gestão de Grupos (Admin) ---
             Route::get('/groups', [AxionGroupController::class, 'index']);
+
+            // =========================================================
+            // --- Gestão de Categorias (Admin) 🔥 NOVO ---
+            // =========================================================
+            Route::prefix('categories')->group(function () {
+                Route::post('/', [CategoryController::class, 'store']);      // Criar categoria
+                Route::put('/{id}', [CategoryController::class, 'update']);   // Atualizar categoria
+                Route::delete('/{id}', [CategoryController::class, 'destroy']); // Excluir categoria
+            });
 
             // --- Gestão de Permissões (IAM) ---
             Route::prefix('permissions')->group(function () {

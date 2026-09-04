@@ -15,6 +15,7 @@ use Laravel\Socialite\Facades\Socialite;
 use OpenApi\Attributes as OA;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use App\Models\Category; 
 
 // ================================================================
 // 🔥 DEFINIÇÃO DOS SCHEMAS PARA SWAGGER (CORRIGIDO)
@@ -216,43 +217,61 @@ class ServiceOrderController extends Controller
             new OA\Response(response: 422, description: 'Erro de validação')
         ]
     )]
-    public function store(Request $request)
-    {
-        $request->validate([
-            'title' => 'required|string',
-            'description' => 'required',
-            'priority' => 'required|in:low,medium,high,urgent',
-            'group_id' => 'nullable|exists:groups,id',
-            'attachment' => 'nullable|file|mimes:pdf,jpg,png|max:5120',
+public function store(Request $request)
+{
+    // 1. VALIDAÇÃO (incluindo category_id)
+    $request->validate([
+        'title' => 'required|string',
+        'description' => 'required',
+        'priority' => 'sometimes|in:low,medium,high,urgent', // agora opcional (usa default da categoria)
+        'group_id' => 'nullable|exists:groups,id',
+        'category_id' => 'required|exists:categories,id', // NOVO
+        'attachment' => 'nullable|file|mimes:pdf,jpg,png|max:5120',
+    ]);
+
+    // 2. PROCESSAR ANEXO
+    $path = $request->hasFile('attachment') 
+        ? $request->file('attachment')->store('attachments', 'public') 
+        : null;
+
+    // 3. BUSCAR CATEGORIA
+    $category = Category::findOrFail($request->category_id);
+
+    // 4. DEFINIR GRUPO (usa o default da categoria se não informado)
+    $groupId = $request->group_id ?? $category->default_group_id;
+
+    // 5. CALCULAR PRAZOS SLA
+    [$firstResponseDue, $resolutionDue] = ServiceOrder::calculateSlaDates($category->id);
+
+    // 6. CRIAR OS COM TODOS OS CAMPOS
+    $os = ServiceOrder::create([
+        'protocol' => 'OS-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4)),
+        'user_id' => auth()->id(),
+        'group_id' => $groupId,
+        'category_id' => $category->id,                  // NOVO
+        'title' => $request->title,
+        'description' => $request->description,
+        'priority' => $request->priority ?? $category->default_priority, // fallback
+        'attachment_path' => $path,
+        'sla_first_response_due_at' => $firstResponseDue,  // NOVO
+        'sla_resolution_due_at' => $resolutionDue,         // NOVO
+    ]);
+
+    // 7. CARREGAR RELACIONAMENTOS
+    $os->load(['user', 'technician', 'group', 'category']); // inclui category
+
+    // 8. NOTIFICAÇÃO
+    try {
+        $this->sendNewOrderNotification($os);
+    } catch (\Exception $e) {
+        Log::error('Erro ao enviar notificação de novo chamado:', [
+            'order_id' => $os->id,
+            'error' => $e->getMessage()
         ]);
-
-        $path = $request->hasFile('attachment') 
-            ? $request->file('attachment')->store('attachments', 'public') 
-            : null;
-
-        $os = ServiceOrder::create([
-            'protocol' => 'OS-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4)),
-            'user_id' => auth()->id(),
-            'group_id' => $request->group_id,
-            'title' => $request->title,
-            'description' => $request->description,
-            'priority' => $request->priority,
-            'attachment_path' => $path,
-        ]);
-
-        $os->load(['user', 'technician', 'group']);
-
-        try {
-            $this->sendNewOrderNotification($os);
-        } catch (\Exception $e) {
-            Log::error('Erro ao enviar notificação de novo chamado:', [
-                'order_id' => $os->id,
-                'error' => $e->getMessage()
-            ]);
-        }
-
-        return response()->json($os, 201);
     }
+
+    return response()->json($os, 201);
+}
 
     #[OA\Get(
         path: '/api/v1/service-orders/{id}',
@@ -742,4 +761,27 @@ public function cancel($id)
         'data' => $os->load(['user', 'technician', 'group'])
     ]);
 }
+
+public function category()
+{
+    return $this->belongsTo(Category::class);
+}
+
+/**
+ * Calcular prazos de SLA com base na categoria
+ */
+public static function calculateSlaDates($categoryId): array
+{
+    $category = Category::find($categoryId);
+    if (!$category) {
+        return [null, null];
+    }
+
+    $now = now();
+    $firstResponseDue = $now->copy()->addHours($category->sla_first_response_hours);
+    $resolutionDue = $now->copy()->addHours($category->sla_resolution_hours);
+
+    return [$firstResponseDue, $resolutionDue];
+}
+
 }
