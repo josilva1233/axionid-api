@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Category; 
 
 class ServiceOrder extends Model
 {
@@ -47,6 +48,8 @@ class ServiceOrder extends Model
     const PRIORITY_URGENT = 'urgent';
 
     // ========== RELACIONAMENTOS ==========
+     
+    
 
     // Usuário que abriu a OS
     public function user(): BelongsTo
@@ -65,6 +68,12 @@ class ServiceOrder extends Model
     {
         return $this->belongsTo(User::class, 'technician_id');
     }
+
+    //  NOVO: Categoria do chamado
+    public function category(): BelongsTo
+{
+    return $this->belongsTo(Category::class);
+}
 
     // Mensagens da OS
     public function messages(): HasMany
@@ -218,4 +227,22 @@ class ServiceOrder extends Model
         }
         return Storage::disk('public')->url($this->attachment_path);
     }
+    // ========== MÉTODOS DE SLA ==========
+
+/**
+ * Calcular prazos de SLA com base na categoria
+ */
+public static function calculateSlaDates($categoryId): array
+{
+    $category = Category::find($categoryId);
+    if (!$category) {
+        return [null, null];
+    }
+
+    $now = now();
+    $firstResponseDue = $now->copy()->addHours($category->sla_first_response_hours);
+    $resolutionDue = $now->copy()->addHours($category->sla_resolution_hours);
+
+    return [$firstResponseDue, $resolutionDue];
+}
 }
