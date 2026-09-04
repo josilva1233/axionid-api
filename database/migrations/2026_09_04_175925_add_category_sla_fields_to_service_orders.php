@@ -9,23 +9,32 @@ return new class extends Migration
     public function up()
     {
         Schema::table('service_orders', function (Blueprint $table) {
-            $table->foreignId('category_id')
-                  ->nullable()
-                  ->after('group_id')
-                  ->constrained('categories')
-                  ->nullOnDelete();
+            // Adiciona category_id (se não existir)
+            if (!Schema::hasColumn('service_orders', 'category_id')) {
+                $table->foreignId('category_id')
+                      ->nullable()
+                      ->after('group_id')
+                      ->constrained('categories')
+                      ->nullOnDelete();
+            }
 
-            // Datas previstas para SLA (calculadas ao criar/atualizar)
-            $table->timestamp('sla_first_response_due_at')->nullable()->after('category_id');
-            $table->timestamp('sla_resolution_due_at')->nullable()->after('sla_first_response_due_at');
+            // Adiciona sla_first_response_due_at (se não existir)
+            if (!Schema::hasColumn('service_orders', 'sla_first_response_due_at')) {
+                $table->timestamp('sla_first_response_due_at')->nullable()->after('category_id');
+            }
 
-            // Campos para controle de cumprimento
-            $table->timestamp('first_response_at')->nullable()->after('sla_resolution_due_at');
-            $table->timestamp('resolved_at')->nullable()->after('first_response_at');
+            // Adiciona sla_resolution_due_at (se não existir)
+            if (!Schema::hasColumn('service_orders', 'sla_resolution_due_at')) {
+                $table->timestamp('sla_resolution_due_at')->nullable()->after('sla_first_response_due_at');
+            }
 
-            // Índices para consultas rápidas
-            $table->index('category_id');
-            $table->index('sla_resolution_due_at');
+            // Adiciona first_response_at (se não existir) - mas talvez já exista?
+            if (!Schema::hasColumn('service_orders', 'first_response_at')) {
+                $table->timestamp('first_response_at')->nullable()->after('sla_resolution_due_at');
+            }
+
+            // NÃO ADICIONAMOS resolved_at novamente porque já existe!
+            // Se quiser garantir que exista, pode verificar, mas não precisa.
         });
     }
 
@@ -38,8 +47,8 @@ return new class extends Migration
                 'sla_first_response_due_at',
                 'sla_resolution_due_at',
                 'first_response_at',
-                'resolved_at'
             ]);
+            // Não removemos resolved_at porque já existia antes
         });
     }
 };
