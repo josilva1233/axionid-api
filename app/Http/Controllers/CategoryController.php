@@ -103,7 +103,16 @@ class CategoryController extends Controller
     )]
     public function store(Request $request)
     {
-        $data = $request->validate([
+        // 🔥 Converte strings vazias em null para campos opcionais
+        $data = $request->all();
+        foreach (['parent_id', 'default_group_id'] as $field) {
+            if (isset($data[$field]) && $data[$field] === '') {
+                $data[$field] = null;
+            }
+        }
+
+        // Validação com os dados já convertidos
+        $validated = validator($data, [
             'name' => 'required|string|max:255|unique:categories',
             'description' => 'nullable|string',
             'parent_id' => 'nullable|exists:categories,id',
@@ -112,11 +121,17 @@ class CategoryController extends Controller
             'sla_resolution_hours' => 'required|integer|min:1|max:720',
             'default_priority' => 'sometimes|in:low,medium,high,urgent',
             'is_active' => 'boolean',
-        ]);
+        ])->validate();
 
-        $data['slug'] = Str::slug($data['name']);
-        $category = Category::create($data);
+        // 🔥 Gera slug único
+        $slug = Str::slug($validated['name']);
+        $count = Category::where('slug', 'like', $slug . '%')->count();
+        if ($count > 0) {
+            $slug = $slug . '-' . ($count + 1);
+        }
+        $validated['slug'] = $slug;
 
+        $category = Category::create($validated);
         return response()->json($category, 201);
     }
 
@@ -155,7 +170,15 @@ class CategoryController extends Controller
     {
         $category = Category::findOrFail($id);
 
-        $data = $request->validate([
+        // 🔥 Converte strings vazias em null para campos opcionais
+        $data = $request->all();
+        foreach (['parent_id', 'default_group_id'] as $field) {
+            if (isset($data[$field]) && $data[$field] === '') {
+                $data[$field] = null;
+            }
+        }
+
+        $validated = validator($data, [
             'name' => 'required|string|max:255|unique:categories,name,' . $id,
             'description' => 'nullable|string',
             'parent_id' => 'nullable|exists:categories,id|not_in:' . $id,
@@ -164,13 +187,21 @@ class CategoryController extends Controller
             'sla_resolution_hours' => 'required|integer|min:1|max:720',
             'default_priority' => 'sometimes|in:low,medium,high,urgent',
             'is_active' => 'boolean',
-        ]);
+        ])->validate();
 
-        if (isset($data['name'])) {
-            $data['slug'] = Str::slug($data['name']);
+        // 🔥 Gera slug único (se o nome mudou)
+        if (isset($validated['name']) && $validated['name'] !== $category->name) {
+            $slug = Str::slug($validated['name']);
+            $count = Category::where('slug', 'like', $slug . '%')
+                              ->where('id', '!=', $id)
+                              ->count();
+            if ($count > 0) {
+                $slug = $slug . '-' . ($count + 1);
+            }
+            $validated['slug'] = $slug;
         }
 
-        $category->update($data);
+        $category->update($validated);
         return response()->json($category);
     }
 
