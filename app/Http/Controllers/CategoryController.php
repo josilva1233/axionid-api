@@ -123,7 +123,7 @@ class CategoryController extends Controller
             'is_active' => 'boolean',
         ])->validate();
 
-        // 🔥 Gera slug único
+        // 🔥 Gera slug único (evita conflitos)
         $slug = Str::slug($validated['name']);
         $count = Category::where('slug', 'like', $slug . '%')->count();
         if ($count > 0) {
