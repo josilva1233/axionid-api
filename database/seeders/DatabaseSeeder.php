@@ -7,6 +7,7 @@ use App\Models\Address;
 use App\Models\Group;
 use App\Models\Term;
 use App\Models\ServiceOrder;
+use App\Models\Permission; // 🔥 ADICIONAR
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -55,13 +56,32 @@ class DatabaseSeeder extends Seeder
         $group = Group::create([
             'name' => 'Administradores',
             'description' => 'Grupo de administradores do sistema',
-            //'is_default' => true,
             'creator_id' => $admin->id,
         ]);
 
         // Adicionar admin ao grupo
         $group->users()->attach($admin->id, ['role' => 'admin']);
         $this->command->info('✅ Grupo criado');
+
+        // 🔥 CRIAR PERMISSÃO orders.create_for_others
+        $permission = Permission::firstOrCreate([
+            'name' => 'orders.create_for_others',
+        ], [
+            'label' => 'Criar chamado para outro usuário',
+            'description' => 'Permite que o usuário abra chamados em nome de outros membros do sistema.'
+        ]);
+        $this->command->info('✅ Permissão orders.create_for_others criada');
+
+        // 🔥 ASSOCIAR PERMISSÃO AO ADMIN
+        $admin->permissions()->syncWithoutDetaching([$permission->id]);
+        $this->command->info('✅ Permissão associada ao admin');
+
+        // 🔥 ASSOCIAR PERMISSÃO AO GRUPO (se o grupo tiver relação com permissions)
+        // Verifica se o modelo Group tem relação com permissions
+        if (method_exists($group, 'permissions')) {
+            $group->permissions()->syncWithoutDetaching([$permission->id]);
+            $this->command->info('✅ Permissão associada ao grupo Administradores');
+        }
 
         // 🔥 TERMOS DE USO
         Term::create([
@@ -139,6 +159,7 @@ Data de vigência: 30/08/2026',
         $this->command->info('📧 User: juliane.fariasp@gmail.com');
         $this->command->info('🔑 Password: Jo@90849204');
         $this->command->info('📋 Chamado ID 3 resolvido em: ' . now()->format('d/m/Y H:i:s'));
+        $this->command->info('🛡️ Permissão orders.create_for_others atribuída ao admin e ao grupo.');
         $this->command->info('========================================');
     }
 }

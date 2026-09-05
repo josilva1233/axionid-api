@@ -6,17 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Group;
 use App\Models\ServiceOrder;
-use App\Models\Category; // 🔥 JÁ EXISTE
+use App\Models\Category;
 use App\Notifications\ServiceOrderNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
-
-// ================================================================
-// 🔥 DEFINIÇÃO DOS SCHEMAS PARA SWAGGER (CORRIGIDO)
-// ================================================================
 
 #[OA\Schema(
     schema: 'User',
@@ -88,37 +84,11 @@ use OpenApi\Attributes as OA;
 #[OA\Tag(name: 'Ordens de Serviço', description: 'Gerenciamento de chamados e ordens de serviço')]
 class ServiceOrderController extends Controller
 {
-    // ================================================================
-    // 🔥 INDEX – LISTAR ORDENS DE SERVIÇO (COM CATEGORIA)
-    // ================================================================
-
-    #[OA\Get(
-        path: '/api/v1/service-orders',
-        summary: 'Listar Ordens de Serviço',
-        description: 'Retorna as OSs vinculadas ao usuário, ao seu grupo ou todas se for admin, permitindo filtros opcionais.',
-        tags: ['Ordens de Serviço'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'page', in: 'query', description: 'Número da página', required: false, schema: new OA\Schema(type: 'integer', example: 1)),
-            new OA\Parameter(name: 'per_page', in: 'query', description: 'Itens por página', required: false, schema: new OA\Schema(type: 'integer', example: 10)),
-            new OA\Parameter(name: 'protocol', in: 'query', description: 'Filtrar por protocolo (parcial)', required: false, schema: new OA\Schema(type: 'string', example: 'OS-2026')),
-            new OA\Parameter(name: 'title', in: 'query', description: 'Filtrar por título/assunto (parcial)', required: false, schema: new OA\Schema(type: 'string', example: 'Erro no sistema')),
-            new OA\Parameter(name: 'applicant', in: 'query', description: 'Filtrar por nome do solicitante', required: false, schema: new OA\Schema(type: 'string', example: 'Luana')),
-            new OA\Parameter(name: 'priority', in: 'query', description: 'Filtrar por prioridade', required: false, schema: new OA\Schema(type: 'string', enum: ['low', 'medium', 'high', 'urgent'])),
-            new OA\Parameter(name: 'status', in: 'query', description: 'Filtrar por status', required: false, schema: new OA\Schema(type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'])),
-            new OA\Parameter(name: 'category_id', in: 'query', description: 'Filtrar por categoria', required: false, schema: new OA\Schema(type: 'integer')),
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'Lista de OS recuperada com sucesso'),
-            new OA\Response(response: 401, description: 'Não autenticado')
-        ]
-    )]
     public function index(Request $request)
     {
         $user = auth()->user();
         $perPage = $request->input('per_page', 10);
 
-        // 🔥 ADICIONADO 'category' AO WITH
         $query = ServiceOrder::with(['user', 'group', 'technician', 'category'])->latest();
 
         if ($request->filled('protocol')) {
@@ -144,7 +114,6 @@ class ServiceOrderController extends Controller
             $query->where('status', $request->status);
         }
 
-        // 🔥 NOVO FILTRO POR CATEGORIA
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->category_id);
         }
@@ -162,14 +131,10 @@ class ServiceOrderController extends Controller
         return response()->json($orders);
     }
 
-    // ================================================================
-    // 🔥 STORE – CRIAR ORDEM DE SERVIÇO (JÁ ESTÁ CORRETO)
-    // ================================================================
-
     #[OA\Post(
         path: '/api/v1/service-orders',
         summary: 'Abrir nova Ordem de Serviço',
-        description: 'Cria uma OS individual ou para um grupo, com suporte a anexo.',
+        description: 'Cria uma OS para o usuário autenticado ou para outro (se tiver permissão).',
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         requestBody: new OA\RequestBody(
@@ -184,7 +149,8 @@ class ServiceOrderController extends Controller
                         new OA\Property(property: 'category_id', type: 'integer', example: 1),
                         new OA\Property(property: 'priority', type: 'string', enum: ['low', 'medium', 'high', 'urgent']),
                         new OA\Property(property: 'group_id', type: 'integer', nullable: true, example: 1),
-                        new OA\Property(property: 'attachment', type: 'string', format: 'binary', description: 'Arquivo PDF ou Imagem')
+                        new OA\Property(property: 'user_id', type: 'integer', nullable: true, description: 'ID do solicitante (apenas admin/técnico com permissão)'),
+                        new OA\Property(property: 'attachment', type: 'string', format: 'binary', description: 'Arquivo PDF ou Imagem'),
                     ]
                 )
             )
@@ -203,21 +169,42 @@ class ServiceOrderController extends Controller
             'group_id' => 'nullable|exists:groups,id',
             'category_id' => 'required|exists:categories,id',
             'attachment' => 'nullable|file|mimes:pdf,jpg,png|max:5120',
+            'user_id' => 'nullable|exists:users,id|integer',
         ]);
 
+        // 🔥 Definir o solicitante (padrão: usuário autenticado)
+        $userId = auth()->id();
+
+        if ($request->filled('user_id') && $request->user_id) {
+            // Verifica permissão: admin OU permissão específica
+            if (auth()->user()->is_admin || auth()->user()->can('orders.create_for_others')) {
+                $targetUser = User::find($request->user_id);
+                if ($targetUser && $targetUser->is_active) {
+                    $userId = $targetUser->id;
+                } else {
+                    return response()->json([
+                        'message' => 'Usuário inválido ou inativo.'
+                    ], 422);
+                }
+            } else {
+                // Sem permissão: ignora e usa o próprio ID
+                // Pode retornar erro ou simplesmente ignorar
+                // Vamos ignorar e usar o próprio usuário
+            }
+        }
+
+        // Processar anexo
         $path = $request->hasFile('attachment')
             ? $request->file('attachment')->store('attachments', 'public')
             : null;
 
         $category = Category::findOrFail($request->category_id);
         $groupId = $request->group_id ?? $category->default_group_id;
-
-        // 🔥 Usa o método do model (movido para ServiceOrder)
         [$firstResponseDue, $resolutionDue] = ServiceOrder::calculateSlaDates($category->id);
 
         $os = ServiceOrder::create([
             'protocol' => 'OS-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4)),
-            'user_id' => auth()->id(),
+            'user_id' => $userId,
             'group_id' => $groupId,
             'category_id' => $category->id,
             'title' => $request->title,
@@ -242,27 +229,8 @@ class ServiceOrderController extends Controller
         return response()->json($os, 201);
     }
 
-    // ================================================================
-    // 🔥 SHOW – DETALHES DA ORDEM (COM CATEGORIA)
-    // ================================================================
-
-    #[OA\Get(
-        path: '/api/v1/service-orders/{id}',
-        summary: 'Obter detalhes de uma Ordem de Serviço',
-        tags: ['Ordens de Serviço'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'Detalhes da OS'),
-            new OA\Response(response: 401, description: 'Não autenticado'),
-            new OA\Response(response: 404, description: 'OS não encontrada')
-        ]
-    )]
     public function show($id)
     {
-        // 🔥 ADICIONADO 'category' AO WITH
         $order = ServiceOrder::with(['user', 'group', 'technician', 'category'])->find($id);
 
         if (!$order) {
@@ -272,36 +240,6 @@ class ServiceOrderController extends Controller
         return response()->json($order);
     }
 
-    // ================================================================
-    // 🔥 UPDATE – ATUALIZAR ORDEM (COM CATEGORIA)
-    // ================================================================
-
-    #[OA\Put(
-        path: '/api/v1/service-orders/{id}',
-        summary: 'Atualizar/Atender Ordem de Serviço',
-        description: 'Permite mudar o status, atribuir técnico e alterar a categoria.',
-        tags: ['Ordens de Serviço'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-        ],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                properties: [
-                    new OA\Property(property: 'status', type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'], example: 'in_progress'),
-                    new OA\Property(property: 'technician_notes', type: 'string', example: 'Troca de cabo realizada com sucesso.'),
-                    new OA\Property(property: 'technician_id', type: 'integer', nullable: true, example: 5),
-                    new OA\Property(property: 'category_id', type: 'integer', nullable: true, example: 2),
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(response: 200, description: 'OS atualizada com sucesso'),
-            new OA\Response(response: 403, description: 'Sem permissão'),
-            new OA\Response(response: 404, description: 'OS não encontrada')
-        ]
-    )]
     public function update(Request $request, $id)
     {
         $os = ServiceOrder::with(['user', 'technician', 'group'])->findOrFail($id);
@@ -314,11 +252,8 @@ class ServiceOrderController extends Controller
         $oldTechnicianId = $os->technician_id;
         $user = auth()->user();
 
-        // 🔥 PERMITIR ALTERAR CATEGORIA
         if ($request->has('category_id')) {
-            $request->validate([
-                'category_id' => 'exists:categories,id'
-            ]);
+            $request->validate(['category_id' => 'exists:categories,id']);
             $os->category_id = $request->category_id;
         }
 
@@ -334,19 +269,15 @@ class ServiceOrderController extends Controller
             $os->technician_id = $request->technician_id;
         }
 
-        // 🔥 Registra primeiro atendimento
         if ($request->status === 'in_progress' && !$os->first_response_at) {
             $os->first_response_at = now();
         }
 
-        // 🔥 Registra resolução
         if ($request->status === 'completed' && !$os->resolved_at) {
             $os->resolved_at = now();
         }
 
         $os->save();
-
-        // 🔥 RECARREGA COM CATEGORIA
         $os->load(['user', 'technician', 'group', 'category']);
 
         try {
@@ -367,25 +298,6 @@ class ServiceOrderController extends Controller
         return response()->json($os);
     }
 
-    // ================================================================
-    // 🔥 DELETE – EXCLUIR ORDEM
-    // ================================================================
-
-    #[OA\Delete(
-        path: '/api/v1/service-orders/{id}',
-        summary: 'Excluir Ordem de Serviço',
-        description: 'Remove permanentemente uma OS. Apenas administradores podem excluir.',
-        tags: ['Ordens de Serviço'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'OS excluída com sucesso'),
-            new OA\Response(response: 403, description: 'Sem permissão'),
-            new OA\Response(response: 404, description: 'OS não encontrada')
-        ]
-    )]
     public function destroy($id)
     {
         $order = ServiceOrder::findOrFail($id);
@@ -403,28 +315,8 @@ class ServiceOrderController extends Controller
         return response()->json(['message' => 'Ordem de serviço excluída com sucesso.'], 200);
     }
 
-    // ================================================================
-    // 🔥 CANCEL – CANCELAR ORDEM (COM CATEGORIA)
-    // ================================================================
-
-    #[OA\Put(
-        path: '/api/v1/service-orders/{id}/cancel',
-        summary: 'Cancelar Ordem de Serviço',
-        description: 'Permite que o solicitante ou admin cancele um chamado que ainda está aberto ou em andamento.',
-        tags: ['Ordens de Serviço'],
-        security: [['sanctum' => []]],
-        parameters: [
-            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-        ],
-        responses: [
-            new OA\Response(response: 200, description: 'OS cancelada com sucesso'),
-            new OA\Response(response: 403, description: 'Sem permissão'),
-            new OA\Response(response: 422, description: 'Status inválido para cancelamento')
-        ]
-    )]
     public function cancel($id)
     {
-        // 🔥 ADICIONADO 'category' AO WITH
         $os = ServiceOrder::with(['user', 'technician', 'group', 'category'])->findOrFail($id);
         $user = auth()->user();
 
@@ -442,8 +334,6 @@ class ServiceOrderController extends Controller
 
         $os->status = ServiceOrder::STATUS_CANCELLED;
         $os->save();
-
-        // 🔥 RECARREGA COM CATEGORIA
         $os->load(['user', 'technician', 'group', 'category']);
 
         return response()->json([
@@ -452,34 +342,15 @@ class ServiceOrderController extends Controller
         ]);
     }
 
-    // ================================================================
-    // 🔥 MÉTODO: Buscar grupos disponíveis para o formulário
-    // ================================================================
-
-    #[OA\Get(
-        path: '/api/v1/service-orders/groups/available',
-        summary: 'Listar grupos disponíveis para criação de OS',
-        description: 'Retorna os grupos que o usuário pode selecionar ao abrir um chamado. Admins veem todos os grupos.',
-        tags: ['Ordens de Serviço'],
-        security: [['sanctum' => []]],
-        responses: [
-            new OA\Response(response: 200, description: 'Lista de grupos disponíveis'),
-            new OA\Response(response: 401, description: 'Não autenticado'),
-            new OA\Response(response: 500, description: 'Erro interno')
-        ]
-    )]
     public function getAvailableGroups(Request $request)
     {
         try {
             $user = auth()->user();
 
             if ($user->is_admin) {
-                $groups = Group::orderBy('name')
-                    ->get(['id', 'name', 'description']);
+                $groups = Group::orderBy('name')->get(['id', 'name', 'description']);
             } else {
-                $groups = $user->groups()
-                    ->orderBy('name')
-                    ->get(['id', 'name', 'description']);
+                $groups = $user->groups()->orderBy('name')->get(['id', 'name', 'description']);
             }
 
             return response()->json([
@@ -645,9 +516,7 @@ class ServiceOrderController extends Controller
         if ($order->group_id) {
             $members = User::whereHas('groups', function ($q) use ($order) {
                 $q->where('groups.id', $order->group_id);
-            })
-                ->where('id', '!=', $sender->id)
-                ->get();
+            })->where('id', '!=', $sender->id)->get();
             foreach ($members as $member) {
                 $recipients->push($member);
                 Log::info('👥 Membro do grupo incluso:', ['email' => $member->email]);
@@ -684,9 +553,7 @@ class ServiceOrderController extends Controller
         if ($order->group_id) {
             $members = User::whereHas('groups', function ($q) use ($order) {
                 $q->where('groups.id', $order->group_id);
-            })
-                ->where('id', '!=', $sender->id)
-                ->get();
+            })->where('id', '!=', $sender->id)->get();
             foreach ($members as $member) {
                 $recipients->push($member);
                 Log::info('👥 Membro do grupo incluso:', ['email' => $member->email]);
