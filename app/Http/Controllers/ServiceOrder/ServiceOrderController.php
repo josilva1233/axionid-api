@@ -6,16 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Group;
 use App\Models\ServiceOrder;
+use App\Models\Category; // 🔥 JÁ EXISTE
 use App\Notifications\ServiceOrderNotification;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
-use Laravel\Socialite\Facades\Socialite;
-use OpenApi\Attributes as OA;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
-use App\Models\Category; 
+use OpenApi\Attributes as OA;
 
 // ================================================================
 // 🔥 DEFINIÇÃO DOS SCHEMAS PARA SWAGGER (CORRIGIDO)
@@ -43,6 +40,22 @@ use App\Models\Category;
     ]
 )]
 #[OA\Schema(
+    schema: 'Category',
+    type: 'object',
+    properties: [
+        new OA\Property(property: 'id', type: 'integer', example: 1),
+        new OA\Property(property: 'name', type: 'string', example: 'Rede'),
+        new OA\Property(property: 'slug', type: 'string', example: 'rede'),
+        new OA\Property(property: 'description', type: 'string', nullable: true),
+        new OA\Property(property: 'parent_id', type: 'integer', nullable: true),
+        new OA\Property(property: 'default_group_id', type: 'integer', nullable: true),
+        new OA\Property(property: 'sla_first_response_hours', type: 'integer', example: 4),
+        new OA\Property(property: 'sla_resolution_hours', type: 'integer', example: 24),
+        new OA\Property(property: 'default_priority', type: 'string', enum: ['low','medium','high','urgent']),
+        new OA\Property(property: 'is_active', type: 'boolean', example: true),
+    ]
+)]
+#[OA\Schema(
     schema: 'ServiceOrder',
     type: 'object',
     properties: [
@@ -52,7 +65,7 @@ use App\Models\Category;
         new OA\Property(property: 'description', type: 'string', example: 'Não consigo logar desde hoje cedo'),
         new OA\Property(property: 'status', type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'], example: 'open'),
         new OA\Property(property: 'priority', type: 'string', enum: ['low', 'medium', 'high', 'urgent'], example: 'high'),
-        new OA\Property(property: 'category', type: 'string', nullable: true, example: 'Rede'),
+        new OA\Property(property: 'category_id', type: 'integer', nullable: true, example: 1),
         new OA\Property(property: 'department', type: 'string', nullable: true, example: 'TI'),
         new OA\Property(property: 'deadline', type: 'string', format: 'date', nullable: true, example: '2025-12-31'),
         new OA\Property(property: 'contact_phone', type: 'string', nullable: true, example: '1199999999'),
@@ -63,6 +76,11 @@ use App\Models\Category;
         new OA\Property(property: 'user', ref: '#/components/schemas/User'),
         new OA\Property(property: 'group', ref: '#/components/schemas/Group'),
         new OA\Property(property: 'technician', ref: '#/components/schemas/User'),
+        new OA\Property(property: 'category', ref: '#/components/schemas/Category'),
+        new OA\Property(property: 'sla_first_response_due_at', type: 'string', format: 'date-time', nullable: true),
+        new OA\Property(property: 'sla_resolution_due_at', type: 'string', format: 'date-time', nullable: true),
+        new OA\Property(property: 'first_response_at', type: 'string', format: 'date-time', nullable: true),
+        new OA\Property(property: 'resolved_at', type: 'string', format: 'date-time', nullable: true),
         new OA\Property(property: 'created_at', type: 'string', format: 'date-time'),
         new OA\Property(property: 'updated_at', type: 'string', format: 'date-time'),
     ]
@@ -70,6 +88,10 @@ use App\Models\Category;
 #[OA\Tag(name: 'Ordens de Serviço', description: 'Gerenciamento de chamados e ordens de serviço')]
 class ServiceOrderController extends Controller
 {
+    // ================================================================
+    // 🔥 INDEX – LISTAR ORDENS DE SERVIÇO (COM CATEGORIA)
+    // ================================================================
+
     #[OA\Get(
         path: '/api/v1/service-orders',
         summary: 'Listar Ordens de Serviço',
@@ -77,69 +99,17 @@ class ServiceOrderController extends Controller
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(
-                name: 'page',
-                in: 'query',
-                description: 'Número da página',
-                required: false,
-                schema: new OA\Schema(type: 'integer', example: 1)
-            ),
-            new OA\Parameter(
-                name: 'per_page',
-                in: 'query',
-                description: 'Itens por página',
-                required: false,
-                schema: new OA\Schema(type: 'integer', example: 10)
-            ),
-            new OA\Parameter(
-                name: 'protocol',
-                in: 'query',
-                description: 'Filtrar por protocolo (parcial)',
-                required: false,
-                schema: new OA\Schema(type: 'string', example: 'OS-2026')
-            ),
-            new OA\Parameter(
-                name: 'title',
-                in: 'query',
-                description: 'Filtrar por título/assunto (parcial)',
-                required: false,
-                schema: new OA\Schema(type: 'string', example: 'Erro no sistema')
-            ),
-            new OA\Parameter(
-                name: 'applicant',
-                in: 'query',
-                description: 'Filtrar por nome do solicitante',
-                required: false,
-                schema: new OA\Schema(type: 'string', example: 'Luana')
-            ),
-            new OA\Parameter(
-                name: 'priority',
-                in: 'query',
-                description: 'Filtrar por prioridade',
-                required: false,
-                schema: new OA\Schema(type: 'string', enum: ['low', 'medium', 'high', 'urgent'])
-            ),
-            new OA\Parameter(
-                name: 'status',
-                in: 'query',
-                description: 'Filtrar por status',
-                required: false,
-                schema: new OA\Schema(type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'])
-            )
+            new OA\Parameter(name: 'page', in: 'query', description: 'Número da página', required: false, schema: new OA\Schema(type: 'integer', example: 1)),
+            new OA\Parameter(name: 'per_page', in: 'query', description: 'Itens por página', required: false, schema: new OA\Schema(type: 'integer', example: 10)),
+            new OA\Parameter(name: 'protocol', in: 'query', description: 'Filtrar por protocolo (parcial)', required: false, schema: new OA\Schema(type: 'string', example: 'OS-2026')),
+            new OA\Parameter(name: 'title', in: 'query', description: 'Filtrar por título/assunto (parcial)', required: false, schema: new OA\Schema(type: 'string', example: 'Erro no sistema')),
+            new OA\Parameter(name: 'applicant', in: 'query', description: 'Filtrar por nome do solicitante', required: false, schema: new OA\Schema(type: 'string', example: 'Luana')),
+            new OA\Parameter(name: 'priority', in: 'query', description: 'Filtrar por prioridade', required: false, schema: new OA\Schema(type: 'string', enum: ['low', 'medium', 'high', 'urgent'])),
+            new OA\Parameter(name: 'status', in: 'query', description: 'Filtrar por status', required: false, schema: new OA\Schema(type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'])),
+            new OA\Parameter(name: 'category_id', in: 'query', description: 'Filtrar por categoria', required: false, schema: new OA\Schema(type: 'integer')),
         ],
         responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Lista de OS recuperada com sucesso',
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: 'current_page', type: 'integer'),
-                        new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/ServiceOrder')),
-                        new OA\Property(property: 'last_page', type: 'integer'),
-                        new OA\Property(property: 'total', type: 'integer'),
-                    ]
-                )
-            ),
+            new OA\Response(response: 200, description: 'Lista de OS recuperada com sucesso'),
             new OA\Response(response: 401, description: 'Não autenticado')
         ]
     )]
@@ -147,9 +117,10 @@ class ServiceOrderController extends Controller
     {
         $user = auth()->user();
         $perPage = $request->input('per_page', 10);
-        
-        $query = ServiceOrder::with(['user', 'group', 'technician'])->latest();
-        
+
+        // 🔥 ADICIONADO 'category' AO WITH
+        $query = ServiceOrder::with(['user', 'group', 'technician', 'category'])->latest();
+
         if ($request->filled('protocol')) {
             $query->where('protocol', 'like', '%' . $request->protocol . '%');
         }
@@ -160,7 +131,7 @@ class ServiceOrderController extends Controller
 
         if ($request->filled('applicant') || $request->filled('solicitante')) {
             $search = $request->input('applicant', $request->input('solicitante'));
-            $query->whereHas('user', function($q) use ($search) {
+            $query->whereHas('user', function ($q) use ($search) {
                 $q->where('name', 'like', '%' . $search . '%');
             });
         }
@@ -173,18 +144,27 @@ class ServiceOrderController extends Controller
             $query->where('status', $request->status);
         }
 
+        // 🔥 NOVO FILTRO POR CATEGORIA
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
+
         if ($user->is_admin) {
             $orders = $query->paginate($perPage);
         } else {
             $groupIds = $user->groups->pluck('id');
-            $orders = $query->where(function($q) use ($user, $groupIds) {
+            $orders = $query->where(function ($q) use ($user, $groupIds) {
                 $q->where('user_id', $user->id)
-                  ->orWhereIn('group_id', $groupIds);
+                    ->orWhereIn('group_id', $groupIds);
             })->paginate($perPage);
         }
 
         return response()->json($orders);
     }
+
+    // ================================================================
+    // 🔥 STORE – CRIAR ORDEM DE SERVIÇO (JÁ ESTÁ CORRETO)
+    // ================================================================
 
     #[OA\Post(
         path: '/api/v1/service-orders',
@@ -197,10 +177,11 @@ class ServiceOrderController extends Controller
             content: new OA\MediaType(
                 mediaType: 'multipart/form-data',
                 schema: new OA\Schema(
-                    required: ['title', 'description', 'priority'],
+                    required: ['title', 'description', 'category_id'],
                     properties: [
                         new OA\Property(property: 'title', type: 'string', example: 'Problema no acesso ao sistema'),
                         new OA\Property(property: 'description', type: 'string', example: 'Não consigo logar desde hoje cedo'),
+                        new OA\Property(property: 'category_id', type: 'integer', example: 1),
                         new OA\Property(property: 'priority', type: 'string', enum: ['low', 'medium', 'high', 'urgent']),
                         new OA\Property(property: 'group_id', type: 'integer', nullable: true, example: 1),
                         new OA\Property(property: 'attachment', type: 'string', format: 'binary', description: 'Arquivo PDF ou Imagem')
@@ -209,69 +190,61 @@ class ServiceOrderController extends Controller
             )
         ),
         responses: [
-            new OA\Response(
-                response: 201,
-                description: 'OS criada com sucesso',
-                content: new OA\JsonContent(ref: '#/components/schemas/ServiceOrder')
-            ),
+            new OA\Response(response: 201, description: 'OS criada com sucesso'),
             new OA\Response(response: 422, description: 'Erro de validação')
         ]
     )]
-public function store(Request $request)
-{
-    // 1. VALIDAÇÃO (incluindo category_id)
-    $request->validate([
-        'title' => 'required|string',
-        'description' => 'required',
-        'priority' => 'sometimes|in:low,medium,high,urgent', // agora opcional (usa default da categoria)
-        'group_id' => 'nullable|exists:groups,id',
-        'category_id' => 'required|exists:categories,id', // NOVO
-        'attachment' => 'nullable|file|mimes:pdf,jpg,png|max:5120',
-    ]);
-
-    // 2. PROCESSAR ANEXO
-    $path = $request->hasFile('attachment') 
-        ? $request->file('attachment')->store('attachments', 'public') 
-        : null;
-
-    // 3. BUSCAR CATEGORIA
-    $category = Category::findOrFail($request->category_id);
-
-    // 4. DEFINIR GRUPO (usa o default da categoria se não informado)
-    $groupId = $request->group_id ?? $category->default_group_id;
-
-    // 5. CALCULAR PRAZOS SLA
-    [$firstResponseDue, $resolutionDue] = ServiceOrder::calculateSlaDates($category->id);
-
-    // 6. CRIAR OS COM TODOS OS CAMPOS
-    $os = ServiceOrder::create([
-        'protocol' => 'OS-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4)),
-        'user_id' => auth()->id(),
-        'group_id' => $groupId,
-        'category_id' => $category->id,                  // NOVO
-        'title' => $request->title,
-        'description' => $request->description,
-        'priority' => $request->priority ?? $category->default_priority, // fallback
-        'attachment_path' => $path,
-        'sla_first_response_due_at' => $firstResponseDue,  // NOVO
-        'sla_resolution_due_at' => $resolutionDue,         // NOVO
-    ]);
-
-    // 7. CARREGAR RELACIONAMENTOS
-    $os->load(['user', 'technician', 'group', 'category']); // inclui category
-
-    // 8. NOTIFICAÇÃO
-    try {
-        $this->sendNewOrderNotification($os);
-    } catch (\Exception $e) {
-        Log::error('Erro ao enviar notificação de novo chamado:', [
-            'order_id' => $os->id,
-            'error' => $e->getMessage()
+    public function store(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string',
+            'description' => 'required',
+            'priority' => 'sometimes|in:low,medium,high,urgent',
+            'group_id' => 'nullable|exists:groups,id',
+            'category_id' => 'required|exists:categories,id',
+            'attachment' => 'nullable|file|mimes:pdf,jpg,png|max:5120',
         ]);
+
+        $path = $request->hasFile('attachment')
+            ? $request->file('attachment')->store('attachments', 'public')
+            : null;
+
+        $category = Category::findOrFail($request->category_id);
+        $groupId = $request->group_id ?? $category->default_group_id;
+
+        // 🔥 Usa o método do model (movido para ServiceOrder)
+        [$firstResponseDue, $resolutionDue] = ServiceOrder::calculateSlaDates($category->id);
+
+        $os = ServiceOrder::create([
+            'protocol' => 'OS-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4)),
+            'user_id' => auth()->id(),
+            'group_id' => $groupId,
+            'category_id' => $category->id,
+            'title' => $request->title,
+            'description' => $request->description,
+            'priority' => $request->priority ?? $category->default_priority,
+            'attachment_path' => $path,
+            'sla_first_response_due_at' => $firstResponseDue,
+            'sla_resolution_due_at' => $resolutionDue,
+        ]);
+
+        $os->load(['user', 'technician', 'group', 'category']);
+
+        try {
+            $this->sendNewOrderNotification($os);
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar notificação de novo chamado:', [
+                'order_id' => $os->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return response()->json($os, 201);
     }
 
-    return response()->json($os, 201);
-}
+    // ================================================================
+    // 🔥 SHOW – DETALHES DA ORDEM (COM CATEGORIA)
+    // ================================================================
 
     #[OA\Get(
         path: '/api/v1/service-orders/{id}',
@@ -279,27 +252,18 @@ public function store(Request $request)
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(
-                name: 'id',
-                in: 'path',
-                required: true,
-                schema: new OA\Schema(type: 'integer'),
-                description: 'ID da ordem de serviço'
-            )
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Detalhes da OS',
-                content: new OA\JsonContent(ref: '#/components/schemas/ServiceOrder')
-            ),
+            new OA\Response(response: 200, description: 'Detalhes da OS'),
             new OA\Response(response: 401, description: 'Não autenticado'),
             new OA\Response(response: 404, description: 'OS não encontrada')
         ]
     )]
     public function show($id)
     {
-        $order = ServiceOrder::with(['user', 'group', 'technician'])->find($id);
+        // 🔥 ADICIONADO 'category' AO WITH
+        $order = ServiceOrder::with(['user', 'group', 'technician', 'category'])->find($id);
 
         if (!$order) {
             return response()->json(['message' => 'Ordem de serviço não encontrada'], 404);
@@ -308,20 +272,18 @@ public function store(Request $request)
         return response()->json($order);
     }
 
+    // ================================================================
+    // 🔥 UPDATE – ATUALIZAR ORDEM (COM CATEGORIA)
+    // ================================================================
+
     #[OA\Put(
         path: '/api/v1/service-orders/{id}',
         summary: 'Atualizar/Atender Ordem de Serviço',
-        description: 'Permite mudar o status (ex: in_progress, completed) e adicionar observações.',
+        description: 'Permite mudar o status, atribuir técnico e alterar a categoria.',
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(
-                name: 'id',
-                in: 'path',
-                required: true,
-                schema: new OA\Schema(type: 'integer'),
-                description: 'ID da ordem de serviço'
-            )
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         requestBody: new OA\RequestBody(
             required: true,
@@ -329,16 +291,13 @@ public function store(Request $request)
                 properties: [
                     new OA\Property(property: 'status', type: 'string', enum: ['open', 'in_progress', 'completed', 'canceled'], example: 'in_progress'),
                     new OA\Property(property: 'technician_notes', type: 'string', example: 'Troca de cabo realizada com sucesso.'),
-                    new OA\Property(property: 'technician_id', type: 'integer', nullable: true, example: 5)
+                    new OA\Property(property: 'technician_id', type: 'integer', nullable: true, example: 5),
+                    new OA\Property(property: 'category_id', type: 'integer', nullable: true, example: 2),
                 ]
             )
         ),
         responses: [
-            new OA\Response(
-                response: 200,
-                description: 'OS atualizada com sucesso',
-                content: new OA\JsonContent(ref: '#/components/schemas/ServiceOrder')
-            ),
+            new OA\Response(response: 200, description: 'OS atualizada com sucesso'),
             new OA\Response(response: 403, description: 'Sem permissão'),
             new OA\Response(response: 404, description: 'OS não encontrada')
         ]
@@ -346,7 +305,7 @@ public function store(Request $request)
     public function update(Request $request, $id)
     {
         $os = ServiceOrder::with(['user', 'technician', 'group'])->findOrFail($id);
-        
+
         if (!auth()->user()->is_admin && $os->user_id !== auth()->id()) {
             return response()->json(['message' => 'Não autorizado'], 403);
         }
@@ -354,6 +313,14 @@ public function store(Request $request)
         $oldStatus = $os->status;
         $oldTechnicianId = $os->technician_id;
         $user = auth()->user();
+
+        // 🔥 PERMITIR ALTERAR CATEGORIA
+        if ($request->has('category_id')) {
+            $request->validate([
+                'category_id' => 'exists:categories,id'
+            ]);
+            $os->category_id = $request->category_id;
+        }
 
         if ($request->has('status')) {
             $os->status = $request->status;
@@ -367,14 +334,26 @@ public function store(Request $request)
             $os->technician_id = $request->technician_id;
         }
 
+        // 🔥 Registra primeiro atendimento
+        if ($request->status === 'in_progress' && !$os->first_response_at) {
+            $os->first_response_at = now();
+        }
+
+        // 🔥 Registra resolução
+        if ($request->status === 'completed' && !$os->resolved_at) {
+            $os->resolved_at = now();
+        }
+
         $os->save();
-        $os->load(['user', 'technician', 'group']);
+
+        // 🔥 RECARREGA COM CATEGORIA
+        $os->load(['user', 'technician', 'group', 'category']);
 
         try {
             if ($request->has('status') && $oldStatus !== $os->status) {
                 $this->sendStatusChangeNotification($os, $oldStatus, $user);
             }
-            
+
             if ($os->technician_id && $oldTechnicianId !== $os->technician_id) {
                 $this->sendAssignmentNotification($os, $user);
             }
@@ -388,6 +367,10 @@ public function store(Request $request)
         return response()->json($os);
     }
 
+    // ================================================================
+    // 🔥 DELETE – EXCLUIR ORDEM
+    // ================================================================
+
     #[OA\Delete(
         path: '/api/v1/service-orders/{id}',
         summary: 'Excluir Ordem de Serviço',
@@ -395,24 +378,10 @@ public function store(Request $request)
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         parameters: [
-            new OA\Parameter(
-                name: 'id',
-                in: 'path',
-                required: true,
-                schema: new OA\Schema(type: 'integer'),
-                description: 'ID da ordem de serviço'
-            )
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
         ],
         responses: [
-            new OA\Response(
-                response: 200,
-                description: 'OS excluída com sucesso',
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: 'message', type: 'string', example: 'Ordem de serviço excluída com sucesso.')
-                    ]
-                )
-            ),
+            new OA\Response(response: 200, description: 'OS excluída com sucesso'),
             new OA\Response(response: 403, description: 'Sem permissão'),
             new OA\Response(response: 404, description: 'OS não encontrada')
         ]
@@ -420,18 +389,67 @@ public function store(Request $request)
     public function destroy($id)
     {
         $order = ServiceOrder::findOrFail($id);
-        
+
         if (!auth()->user()->is_admin) {
             return response()->json(['message' => 'Apenas administradores podem excluir ordens de serviço.'], 403);
         }
-        
+
         if ($order->attachment_path) {
             Storage::disk('public')->delete($order->attachment_path);
         }
-        
+
         $order->delete();
-        
+
         return response()->json(['message' => 'Ordem de serviço excluída com sucesso.'], 200);
+    }
+
+    // ================================================================
+    // 🔥 CANCEL – CANCELAR ORDEM (COM CATEGORIA)
+    // ================================================================
+
+    #[OA\Put(
+        path: '/api/v1/service-orders/{id}/cancel',
+        summary: 'Cancelar Ordem de Serviço',
+        description: 'Permite que o solicitante ou admin cancele um chamado que ainda está aberto ou em andamento.',
+        tags: ['Ordens de Serviço'],
+        security: [['sanctum' => []]],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'OS cancelada com sucesso'),
+            new OA\Response(response: 403, description: 'Sem permissão'),
+            new OA\Response(response: 422, description: 'Status inválido para cancelamento')
+        ]
+    )]
+    public function cancel($id)
+    {
+        // 🔥 ADICIONADO 'category' AO WITH
+        $os = ServiceOrder::with(['user', 'technician', 'group', 'category'])->findOrFail($id);
+        $user = auth()->user();
+
+        if (!$user->is_admin && $os->user_id !== $user->id) {
+            return response()->json([
+                'message' => 'Você não tem permissão para cancelar este chamado.'
+            ], 403);
+        }
+
+        if (!in_array($os->status, ['open', 'in_progress'])) {
+            return response()->json([
+                'message' => 'Apenas chamados abertos ou em andamento podem ser cancelados.'
+            ], 422);
+        }
+
+        $os->status = ServiceOrder::STATUS_CANCELLED;
+        $os->save();
+
+        // 🔥 RECARREGA COM CATEGORIA
+        $os->load(['user', 'technician', 'group', 'category']);
+
+        return response()->json([
+            'message' => 'Ordem de serviço cancelada com sucesso.',
+            'data' => $os
+        ]);
     }
 
     // ================================================================
@@ -445,22 +463,7 @@ public function store(Request $request)
         tags: ['Ordens de Serviço'],
         security: [['sanctum' => []]],
         responses: [
-            new OA\Response(
-                response: 200,
-                description: 'Lista de grupos disponíveis',
-                content: new OA\JsonContent(
-                    properties: [
-                        new OA\Property(property: 'data', type: 'array', items: new OA\Items(
-                            properties: [
-                                new OA\Property(property: 'id', type: 'integer'),
-                                new OA\Property(property: 'name', type: 'string'),
-                                new OA\Property(property: 'description', type: 'string', nullable: true),
-                            ]
-                        )),
-                        new OA\Property(property: 'total', type: 'integer'),
-                    ]
-                )
-            ),
+            new OA\Response(response: 200, description: 'Lista de grupos disponíveis'),
             new OA\Response(response: 401, description: 'Não autenticado'),
             new OA\Response(response: 500, description: 'Erro interno')
         ]
@@ -469,7 +472,7 @@ public function store(Request $request)
     {
         try {
             $user = auth()->user();
-            
+
             if ($user->is_admin) {
                 $groups = Group::orderBy('name')
                     ->get(['id', 'name', 'description']);
@@ -483,7 +486,6 @@ public function store(Request $request)
                 'data' => $groups,
                 'total' => $groups->count()
             ]);
-            
         } catch (\Exception $e) {
             Log::error('Erro ao buscar grupos:', ['error' => $e->getMessage()]);
             return response()->json([
@@ -494,23 +496,20 @@ public function store(Request $request)
     }
 
     // ================================================================
-    // 🔥 MÉTODOS DE NOTIFICAÇÃO (Privados - sem documentação Swagger)
+    // 🔥 MÉTODOS DE NOTIFICAÇÃO (Privados)
     // ================================================================
 
-    /**
-     * Enviar notificação de novo chamado
-     */
     private function sendNewOrderNotification($order)
     {
-        $order = ServiceOrder::with(['user', 'technician', 'group'])->find($order->id);
-        
+        $order = ServiceOrder::with(['user', 'technician', 'group', 'category'])->find($order->id);
+
         if (!$order) {
             Log::error('Ordem não encontrada', ['order_id' => $order->id]);
             return;
         }
-        
+
         $sender = User::find($order->user_id);
-        
+
         if (!$sender) {
             Log::error('Remetente não encontrado', ['order_id' => $order->id]);
             return;
@@ -548,13 +547,10 @@ public function store(Request $request)
         }
     }
 
-    /**
-     * Enviar notificação de mudança de status
-     */
     private function sendStatusChangeNotification($order, $oldStatus, $sender)
     {
-        $order = ServiceOrder::with(['user', 'technician', 'group'])->find($order->id);
-        
+        $order = ServiceOrder::with(['user', 'technician', 'group', 'category'])->find($order->id);
+
         $message = (object) [
             'message' => "Status alterado de '{$oldStatus}' para '{$order->status}'",
             'user_id' => $sender->id,
@@ -567,7 +563,7 @@ public function store(Request $request)
             if ($recipient->id === $sender->id) {
                 continue;
             }
-            
+
             try {
                 $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'status_change'));
                 Log::info('✅ Notificação de status enviada para:', ['email' => $recipient->email]);
@@ -577,16 +573,13 @@ public function store(Request $request)
         }
     }
 
-    /**
-     * Enviar notificação de atribuição
-     */
     private function sendAssignmentNotification($order, $sender)
     {
         if (!$order->technician) {
             return;
         }
 
-        $order = ServiceOrder::with(['user', 'technician', 'group'])->find($order->id);
+        $order = ServiceOrder::with(['user', 'technician', 'group', 'category'])->find($order->id);
 
         $message = (object) [
             'message' => "Chamado atribuído para: {$order->technician->name}",
@@ -600,7 +593,7 @@ public function store(Request $request)
             if ($recipient->id === $sender->id) {
                 continue;
             }
-            
+
             try {
                 $recipient->notify(new ServiceOrderNotification($order, $message, $sender, 'assigned'));
                 Log::info('✅ Notificação de atribuição enviada para:', ['email' => $recipient->email]);
@@ -610,9 +603,6 @@ public function store(Request $request)
         }
     }
 
-    /**
-     * Buscar destinatários para novo chamado (inclui o solicitante)
-     */
     private function getAllRecipientsForNewOrder($order, $sender)
     {
         $recipients = collect();
@@ -623,7 +613,6 @@ public function store(Request $request)
             'has_user' => $order->user ? 'Sim' : 'Não'
         ]);
 
-        // 1. Solicitante
         if ($order->user) {
             $recipients->push($order->user);
             Log::info('📌 Solicitante incluso (via relacionamento):', ['email' => $order->user->email]);
@@ -640,13 +629,11 @@ public function store(Request $request)
             }
         }
 
-        // 2. Técnico
         if ($order->technician && $order->technician->id !== $sender->id) {
             $recipients->push($order->technician);
             Log::info('🔧 Técnico incluso:', ['email' => $order->technician->email]);
         }
 
-        // 3. Administradores
         $admins = User::where('is_admin', true)
             ->where('id', '!=', $sender->id)
             ->get();
@@ -655,13 +642,12 @@ public function store(Request $request)
             Log::info('👑 Admin incluso:', ['email' => $admin->email]);
         }
 
-        // 4. Membros do grupo
         if ($order->group_id) {
-            $members = User::whereHas('groups', function($q) use ($order) {
+            $members = User::whereHas('groups', function ($q) use ($order) {
                 $q->where('groups.id', $order->group_id);
             })
-            ->where('id', '!=', $sender->id)
-            ->get();
+                ->where('id', '!=', $sender->id)
+                ->get();
             foreach ($members as $member) {
                 $recipients->push($member);
                 Log::info('👥 Membro do grupo incluso:', ['email' => $member->email]);
@@ -673,26 +659,20 @@ public function store(Request $request)
         return $recipients->unique('id');
     }
 
-    /**
-     * Buscar destinatários para outros eventos (exclui o remetente)
-     */
     private function getAllRecipients($order, $sender)
     {
         $recipients = collect();
 
-        // 1. Solicitante
         if ($order->user && $order->user->id !== $sender->id) {
             $recipients->push($order->user);
             Log::info('📌 Solicitante incluso:', ['email' => $order->user->email]);
         }
 
-        // 2. Técnico
         if ($order->technician && $order->technician->id !== $sender->id) {
             $recipients->push($order->technician);
             Log::info('🔧 Técnico incluso:', ['email' => $order->technician->email]);
         }
 
-        // 3. Administradores
         $admins = User::where('is_admin', true)
             ->where('id', '!=', $sender->id)
             ->get();
@@ -701,13 +681,12 @@ public function store(Request $request)
             Log::info('👑 Admin incluso:', ['email' => $admin->email]);
         }
 
-        // 4. Membros do grupo
         if ($order->group_id) {
-            $members = User::whereHas('groups', function($q) use ($order) {
+            $members = User::whereHas('groups', function ($q) use ($order) {
                 $q->where('groups.id', $order->group_id);
             })
-            ->where('id', '!=', $sender->id)
-            ->get();
+                ->where('id', '!=', $sender->id)
+                ->get();
             foreach ($members as $member) {
                 $recipients->push($member);
                 Log::info('👥 Membro do grupo incluso:', ['email' => $member->email]);
@@ -716,74 +695,4 @@ public function store(Request $request)
 
         return $recipients->unique('id');
     }
-    // app/Http/Controllers/ServiceOrder/ServiceOrderController.php
-
-#[OA\Put(
-    path: '/api/v1/service-orders/{id}/cancel',
-    summary: 'Cancelar Ordem de Serviço',
-    description: 'Permite que o solicitante ou admin cancele um chamado que ainda está aberto ou em andamento.',
-    tags: ['Ordens de Serviço'],
-    security: [['sanctum' => []]],
-    parameters: [
-        new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))
-    ],
-    responses: [
-        new OA\Response(response: 200, description: 'OS cancelada com sucesso'),
-        new OA\Response(response: 403, description: 'Sem permissão'),
-        new OA\Response(response: 422, description: 'Status inválido para cancelamento')
-    ]
-)]
-public function cancel($id)
-{
-    $os = ServiceOrder::with(['user', 'technician', 'group'])->findOrFail($id);
-    $user = auth()->user();
-
-    // Verificar se o usuário é o solicitante ou admin
-    if (!$user->is_admin && $os->user_id !== $user->id) {
-        return response()->json([
-            'message' => 'Você não tem permissão para cancelar este chamado.'
-        ], 403);
-    }
-
-    // Verificar se o status permite cancelamento
-    if (!in_array($os->status, ['open', 'in_progress'])) {
-        return response()->json([
-            'message' => 'Apenas chamados abertos ou em andamento podem ser cancelados.'
-        ], 422);
-    }
-
-    // Atualizar status para 'cancelled'
-    $os->status = ServiceOrder::STATUS_CANCELLED;
-    $os->save();
-
-    return response()->json([
-        'message' => 'Ordem de serviço cancelada com sucesso.',
-        'data' => $os->load(['user', 'technician', 'group'])
-    ]);
-}
-
-public function category()
-{
-    return $this->belongsTo(Category::class);
-}
-
-/**
- * Calcular prazos de SLA com base na categoria
- */
-public static function calculateSlaDates($categoryId): array
-{
-    $category = Category::find($categoryId);
-    if (!$category) {
-        return [null, null];
-    }
-
-    $now = now();
-    $firstResponseDue = $now->copy()->addHours($category->sla_first_response_hours);
-    $resolutionDue = $now->copy()->addHours($category->sla_resolution_hours);
-
-    return [$firstResponseDue, $resolutionDue];
-}
-
-
-
 }
