@@ -35,6 +35,7 @@ class CategoryController extends Controller
 
     /**
      * Lista todas as categorias ativas (formato plano, com nível)
+     * 🔥 AGORA COM RELACIONAMENTO DEFAULTGROUP CARREGADO
      */
     #[OA\Get(
         path: '/api/v1/categories',
@@ -47,7 +48,26 @@ class CategoryController extends Controller
     )]
     public function index()
     {
-        return Category::getFlatList();
+        // 🔥 Carrega todas as categorias com o relacionamento defaultGroup
+        $categories = Category::with('defaultGroup')->get();
+        
+        // 🔥 Constrói a lista plana com níveis (recursivo)
+        return $this->buildFlatList($categories);
+    }
+
+    /**
+     * Constrói uma lista plana com níveis a partir de uma coleção de categorias
+     */
+    private function buildFlatList($categories, $parentId = null, $depth = 0, &$list = [])
+    {
+        foreach ($categories as $cat) {
+            if ($cat->parent_id == $parentId) {
+                $cat->level = $depth;
+                $list[] = $cat;
+                $this->buildFlatList($categories, $cat->id, $depth + 1, $list);
+            }
+        }
+        return $list;
     }
 
     /**
