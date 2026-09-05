@@ -49,7 +49,7 @@ class CategoryController extends Controller
     public function index()
     {
         // 🔥 Carrega todas as categorias com o relacionamento defaultGroup
-        $categories = Category::with('defaultGroup')->get();
+        $categories = Category::with(['defaultGroup', 'parent'])->get();
         
         // 🔥 Constrói a lista plana com níveis (recursivo)
         return $this->buildFlatList($categories);
